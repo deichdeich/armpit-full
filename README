@@ -1,7 +1,5 @@
-As of this writing, this is a copy of REMOTE-WORK/PREP-FOR-RETURN, but in a
-more convenient and appropriately named location.  In this directory, I will
-finally get everything working with a single keystroke, which I never got
-around to doing before I went back to Utah.
-
-Last updated:
-May 29, 2015
+This repo contains all of the code for my analysis of the
+Panchromatic Hubble Andromeda Treasury (PHAT) data.  It was
+written in the summers of 2014 and 2015 at the University of
+Utah.  There is a lot of chaff and test scripts in here;
+for the most part, the only thing that matters is armpit.py.
