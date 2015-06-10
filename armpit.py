@@ -293,4 +293,4 @@ class simulation(object):
     
     def write_data(self):
         simulation = self.add_av()
-        # write to fits file, include simulation and isochrone age in header
+        #write to fits file, include simulation and isochrone age in header
