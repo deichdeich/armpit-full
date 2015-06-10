@@ -33,6 +33,8 @@ class armpit(object):
         
         self.data_path = data_path
         
+        # since simulation files are now going to be fits, get rid of
+        # this csv check. Also needed: checking the header for the SIMULATION keyword
         if self.data_path.endswith('.csv'):
             self.raw_data = np.genfromtxt(self.data_path, names=True, delimiter=',')
         elif self.data_path.endswith('.fits'):
@@ -65,23 +67,36 @@ class armpit(object):
     Returns: data from inputted columns
     If argument left blank, loads whole data file
     '''
-    def load_data(self,*cols):
+    def load_data(self,num=None,*cols):
         filename = self.data()
         data_cols = np.genfromtxt(filename,names=True,delimiter=',').dtype.names
         if cols == ():
             req_cols = data_cols
         else:
             req_cols = cols
-            
-        bad_cols = ()
+        
+        data_file_len = len(np.genfromtxt(filename,names=True,delimiter=','))
+        
+        if num == None:
+            skip = 0
+        elif num >= data_file_len:
+            skip = 0
+        else:
+            skip = data_file_len - num
+        
+        bad_cols = []
         for col in cols:
             if col not in data_cols:
                 bad_cols.append(col)
-        if bad_cols != ():
-            raise ValueError('{} not found for data names.  Available names:{}'.format(bad_cols, data_cols))
+        if bad_cols != []:
+            raise ValueError('{} not found for data column names.\n\nAvailable columns:\n{}'.format(bad_cols, data_cols))
             return_data = np.nan
         else:
-            return_data = np.genfromtxt(filename,names=True,delimiter=',',usecols=req_cols)
+            return_data = np.genfromtxt(filename,
+                                        names=True,
+                                        delimiter=',',
+                                        usecols=req_cols,
+                                        skip_footer=skip)
         return return_data
     
     '''
@@ -165,24 +180,45 @@ class armpit(object):
         n = 0
         data_length = limit+0.0
         with open(self.filename, 'wb') as outfile:
-            outfile.write('RA,DEC,F336W-F475W_RAW,F475W-F814W_RAW,F475W_RAW,F336W-F475W,F475W-F814W,F475W,A(F475W),Z\n')
+            with open(self.filename,'wb') as outfile:
+                if is_sim == True:
+                    outfile.write('RA,DEC,F336W_NAKED-F475W_NAKED,F475W_NAKED-F814W_NAKED,F475W_NAKED,F336W-F475W_VEGA,F475W-F814W_VEGA,F475W_VEGA,F336W-F475W,F475W-F814W,F475W,A(F475W)_IN,A(F475W)_OUT,A(F475W)_DIFF,Z\n')
+                elif is_sim == False:
+                    outfile.write('RA,DEC,F336W-F475W_VEGA,F475W-F814W_VEGA,F475W_VEGA,F336W-F475W,F475W-F814W,F475W,A(F475W),Z\n')
         with open(self.filename, 'ab') as outfile:
             for star in self.raw_data[:limit]:
                 new336475, new475814, new475, a475 = self.phart(star)
                 new336 = new336475 + new475
                 new814 = (-1*new475814) - new475
-                
-                z = self.metal_fit(new336475,new475)           
-                data = (star['RA'],
-                        star['DEC'],
-                        star['F336W_VEGA']-star['F475W_VEGA'],
-                        star['F475W_VEGA']-star['F814W_VEGA'],
-                        star['F475W_VEGA'],
-                        new336475[0],
-                        new475814[0],
-                        new475[0],
-                        a475[0],
-                        z[0])
+                 
+                z = self.metal_fit(new336475,new475)   
+                if is_sim == True:
+                    data = (star['RA'],
+                            star['DEC'],
+                            star['F336W_NAKED']-star['F475W_NAKED'],
+                            star['F475W_NAKED']-star['F814W_NAKED'],
+                            star['F475W_NAKED'],
+                            star['F336W_VEGA']-star['F475W_VEGA'],
+                            star['F475W_VEGA']-star['F814W_VEGA'],
+                            star['F475W_VEGA'],
+                            new336475[0],
+                            new475814[0],
+                            new475[0],
+                            star['AF475W_IN'],
+                            a475[0],
+                            star['AF475W_IN']-a475[0],
+                            z[0])        
+                elif is_sim == False:
+                    data = (star['RA'],
+                            star['DEC'],
+                            star['F336W_VEGA']-star['F475W_VEGA'],
+                            star['F475W_VEGA']-star['F814W_VEGA'],
+                            star['F475W_VEGA'],
+                            new336475[0],
+                            new475814[0],
+                            new475[0],
+                            a475[0],
+                            z[0])
                 outfile.write('{}\n'.format(','.join(map(str,(data)))))
                 n += 1
                 sys.stdout.write('\rDoing line {}, {}% done'.format(n,(n/data_length)*100))
@@ -203,7 +239,11 @@ class simulation(object):
         self.iso_color_x = sorted(self.iso_colors["Iso(336-475)"])
         self.iso_color_y = sorted(self.iso_colors["Iso(475-814)"])
         self.numstars = numstars
-        self.mass_distribution = self.masslist(numstars)        
+        self.mass_distribution = self.masslist(numstars)      
+        
+        self.month = time.strftime('%m')
+        self.day = time.strftime('%d')
+        self.filename = 'armpit_out/sim_data/armpit_out_{}_{}.csv'.format(self.month,self.day)
  
     def masslist(self,numstars):
         population = np.random.random(numstars)
@@ -219,11 +259,38 @@ class simulation(object):
                                       bounds_error = False)
         return intp_function
         
-    def add_grid(self):
+    def add_av(self):
         naked_w336 = self.interp('W336MAG')(self.mass_distribution)
         naked_f475 = self.interp('F475MAG')(self.mass_distribution)
         naked_f814 = self.interp('F814MAG')(self.mass_distribution)
         naked_w336f475 = naked_w336 - naked_f475
         naked_f475f814 = naked_f475 - naked_f814
         
-        v_range = np.linspace(0,3.5,num=200)  
+        av_range = (3.5)*np.random.random(self.numstars)
+
+        redvecs = {'w336f475':[(-1)*(1.225/0.446)], 'f475f814':[(-1)*(1.225/0.61)]}
+        
+        new_f475 = naked_f475+av_range
+        new_w336f475 = ((naked_f475 - new_f475) + (redvecs['w336f475'] * naked_w336f475))/redvecs['w336f475'])
+        new_f475f814 = ((naked_f475 - new_f475) + (redvecs['f475f814'] * data['F475MAG-F814MAG']))/redvecs['f475f814'])
+        
+        new_w336 = new_w336f475 + new_f475
+        new_f814 = -1 * new_f475f814 - new_f475 
+        
+        ra = np.linspace(1,self.numstars,self.numstars)
+        dec = ra
+        sim_data = np.array([ra,
+                         dec,
+                         naked_w336f475,
+                         naked_f475f814,
+                         naked_f475,
+                         new_w336,
+                         new_f475,
+                         new_f814,
+                         av_range]).T
+        
+        return sim_data
+    
+    def write_data(self):
+        simulation = self.add_av()
+        # write to fits file, include simulation and isochrone age in header
