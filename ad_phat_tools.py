@@ -33,19 +33,30 @@ class armpit(object):
         
         self.data_path = data_path
         
-        # since simulation files are now going to be fits, get rid of
-        # this csv check. Also needed: checking the header for the SIMULATION keyword
-        # also have armpit take just the simulation object like so:
+        # get the path of the fits file    
         if type(self.data_path) == ad_phat_tools.simulation:
-            self.raw_data = self.data_path.filename
+            self.raw_file = self.data_path.filename
         elif self.data_path.endswith('.fits'):
-            self.raw_data = fits.open(self.data_path)
-            self.raw_data = self.raw_data[1].data
-            self.raw_data = self.raw_data[np.where(self.raw_data['F814W_ERR']<0.25)]
-            self.raw_data = self.raw_data[np.where(self.raw_data['F475W_ERR']<0.25)]
+            self.raw_file = self.data_path
         else:
-            raise ValueError('Data input must either be a fits file with containing the relevant columns or a simulation object.')        
+            raise IOError('Data input must either be a fits file with containing the relevant columns or a simulation object.')
         
+        self.raw_fits = fits.open(self.raw_file)
+        
+        self.data_header = self.raw_fits[0].header
+        
+        # check if it's a simulation output-- I *could* just do this when I do
+        # if type(...) above, but I can conceive of having simulation output
+        # that's not just an object.
+        if 'IS_SIM' in self.data_header:
+            self.is_sim = self.data_header['IS_SIM']
+        else:
+            self.is_sim = False
+        
+        # trim the data
+        self.raw_data = self.raw_fits[1].data
+        self.raw_data = self.raw_data[np.where(self.raw_data['F814W_ERR']<0.25)]
+        self.raw_data = self.raw_data[np.where(self.raw_data['F475W_ERR']<0.25)]
 
             
         #self.data_colors = np.rec.array([(self.raw_data['F336W_VEGA']-self.raw_data['F475W_VEGA']),
@@ -282,8 +293,11 @@ class simulation(object):
         
         #ra, dec are dummy counters.  it's helpful for keeping track of individual stars
         #later and it makes it fit into the format that armpit expects.
-        ra = np.linspace(1,self.numstars,self.numstars)
+        ra = np.linspace(1,naked_f475,naked_f475)
         dec = ra
+        
+        #armpit expects there to be an error column, so I use the following for all three.
+        dummy = np.zeros(naked_f475)
         
         #I don't know how to prepare these columns for a FITS table file nicely,
         #so this is how it's going for now
@@ -299,6 +313,9 @@ class simulation(object):
              fits.Column(name='F475W_VEGA',format = 'E',array = new_f475)
              fits.Column(name='F814W_VEGA',format = 'E',array = new_f814)
              fits.Column(name='AF475W_IN',format = 'E',array = av_range)])
+             fits.Column(name='F336W_ERR',format = 'E',array = dummy)
+             fits.Column(name='F475W_ERR',format = 'E',array = dummy)
+             fits.Column(name='F814W_ERR',format = 'E',array = dummy)
         
         return sim_data
     
