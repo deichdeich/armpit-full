@@ -34,7 +34,7 @@ class armpit(object):
         self.data_path = data_path
         
         # get the path of the fits file    
-        if type(self.data_path) == ad_phat_tools.simulation:
+        if type(self.data_path) is simulation:
             self.raw_file = self.data_path.filename
         elif self.data_path.endswith('.fits'):
             self.raw_file = self.data_path
@@ -192,9 +192,9 @@ class armpit(object):
         n = 0
         data_length = limit+0.0
         with open(self.filename, 'wb') as outfile:
-            if is_sim == True:
+            if self.is_sim == True:
                 outfile.write('RA,DEC,F336W_NAKED-F475W_NAKED,F475W_NAKED-F814W_NAKED,F475W_NAKED,F336W-F475W_VEGA,F475W-F814W_VEGA,F475W_VEGA,F336W-F475W,F475W-F814W,F475W,A(F475W)_IN,A(F475W)_OUT,A(F475W)_DIFF,Z\n')
-            elif is_sim == False:
+            elif self.is_sim == False:
                 outfile.write('RA,DEC,F336W-F475W_VEGA,F475W-F814W_VEGA,F475W_VEGA,F336W-F475W,F475W-F814W,F475W,A(F475W),Z\n')
         with open(self.filename, 'ab') as outfile:
             for star in self.raw_data[:limit]:
@@ -203,7 +203,7 @@ class armpit(object):
                 new814 = (-1*new475814) - new475
                  
                 z = self.metal_fit(new336475,new475)   
-                if is_sim == True:
+                if self.is_sim == True:
                     data = (star['RA'],
                             star['DEC'],
                             star['F336W_NAKED']-star['F475W_NAKED'],
@@ -219,7 +219,7 @@ class armpit(object):
                             a475[0],
                             star['AF475W_IN']-a475[0],
                             z[0])        
-                elif is_sim == False:
+                elif self.is_sim == False:
                     data = (star['RA'],
                             star['DEC'],
                             star['F336W_VEGA']-star['F475W_VEGA'],
@@ -236,7 +236,7 @@ class armpit(object):
                 sys.stdout.flush()
       
 class simulation(object):
-    def __init__(self,iso_age,numstars):
+    def __init__(self,numstars,iso_age):
         self.iso_age = iso_age
         self.iso_path = 'isochrones/{}Myr_finez.fits'.format(self.iso_age)
         self.isochrones = fits.open(self.iso_path)
@@ -254,7 +254,7 @@ class simulation(object):
         
         self.month = time.strftime('%m')
         self.day = time.strftime('%d')
-        self.filename = 'armpit_out/sim_data/armpit_out_{}_{}.csv'.format(self.month,self.day)
+        self.filename = 'sim_out_{}_{}.fits'.format(self.month,self.day)
         
         self.write_data()       
  
@@ -281,23 +281,25 @@ class simulation(object):
         
         av_range = (3.5)*np.random.random(len(naked_f475))
 
-        redvecs = {'w336f475':[(-1)*(1.225/0.446)], 'f475f814':[(-1)*(1.225/0.61)]}
+        redvecs = {'w336f475':[0.446], 'f475f814':[0.61]}
         
-        new_f475 = naked_f475+av_range
-        new_w336f475 = ((naked_f475 - new_f475) + redvecs['w336f475'] * naked_w336f475)/redvecs['w336f475']
-        new_f475f814 = ((naked_f475 - new_f475) + redvecs['f475f814'] * naked_f475f814)/redvecs['f475f814']
+        new_f475 = naked_f475-av_range
+        dx = av_range*(redvecs['w336f475'])
+        dy = av_range*(redvecs['f475f814'])
+        new_w336f475 = naked_w336f475+dx
+        new_f475f814 = naked_f475f814+dy
         
         new_w336 = new_w336f475 + new_f475
-        new_f814 = -1 * new_f475f814 - new_f475 
+        new_f814 = -1 * (new_f475f814 - new_f475) 
         
         
         #ra, dec are dummy counters.  it's helpful for keeping track of individual stars
         #later and it makes it fit into the format that armpit expects.
-        ra = np.linspace(1,naked_f475,naked_f475)
+        ra = np.linspace(1,len(naked_f475),len(naked_f475))
         dec = ra
         
         #armpit expects there to be an error column, so I use the following for all three.
-        dummy = np.zeros(naked_f475)
+        dummy = np.zeros(len(naked_f475))
         
         #I don't know how to prepare these columns for a FITS table file nicely,
         #so this is how it's going for now
@@ -305,17 +307,17 @@ class simulation(object):
         sim_data = fits.BinTableHDU.from_columns(
             [fits.Column(name='RA',format='E',array = ra),
              fits.Column(name='DEC',format = 'E',array = dec),
-             fits.Column(name='MASS',format = 'E',array = self.mass_distribution)
+             fits.Column(name='MASS',format = 'E',array = self.mass_distribution),
              fits.Column(name='F336W_NAKED',format = 'E',array = naked_w336),
              fits.Column(name='F475W_NAKED',format = 'E',array = naked_f475),
              fits.Column(name='F814W_NAKED',format = 'E',array = naked_f814),
-             fits.Column(name='F336W_VEGA',format = 'E',array = new_w336)
-             fits.Column(name='F475W_VEGA',format = 'E',array = new_f475)
-             fits.Column(name='F814W_VEGA',format = 'E',array = new_f814)
-             fits.Column(name='AF475W_IN',format = 'E',array = av_range)])
-             fits.Column(name='F336W_ERR',format = 'E',array = dummy)
-             fits.Column(name='F475W_ERR',format = 'E',array = dummy)
-             fits.Column(name='F814W_ERR',format = 'E',array = dummy)
+             fits.Column(name='F336W_VEGA',format = 'E',array = new_w336),
+             fits.Column(name='F475W_VEGA',format = 'E',array = new_f475),
+             fits.Column(name='F814W_VEGA',format = 'E',array = new_f814),
+             fits.Column(name='AF475W_IN',format = 'E',array = av_range),
+             fits.Column(name='F336W_ERR',format = 'E',array = dummy),
+             fits.Column(name='F475W_ERR',format = 'E',array = dummy),
+             fits.Column(name='F814W_ERR',format = 'E',array = dummy)])
         
         return sim_data
     
