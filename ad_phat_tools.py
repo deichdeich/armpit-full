@@ -291,9 +291,13 @@ class simulation(object):
         sim_data = fits.BinTableHDU.from_columns(
             [fits.Column(name='RA',format='E',array = ra),
              fits.Column(name='DEC',format = 'E',array = dec),
-             fits.Column(name='NAKED_F336W',format = 'E',array = naked_w336),
-             fits.Column(name='NAKED_F475W',format = 'E',array = naked_f475),
-             fits.Column(name='NAKED_F814W',format = 'E',array = naked_f814),
+             fits.Column(name='MASS',format = 'E',array = self.mass_distribution)
+             fits.Column(name='F336W_NAKED',format = 'E',array = naked_w336),
+             fits.Column(name='F475W_NAKED',format = 'E',array = naked_f475),
+             fits.Column(name='F814W_NAKED',format = 'E',array = naked_f814),
+             fits.Column(name='F336W_VEGA',format = 'E',array = new_w336)
+             fits.Column(name='F475W_VEGA',format = 'E',array = new_f475)
+             fits.Column(name='F814W_VEGA',format = 'E',array = new_f814)
              fits.Column(name='AF475W_IN',format = 'E',array = av_range)])
         
         return sim_data
