@@ -35,15 +35,16 @@ class armpit(object):
         
         # since simulation files are now going to be fits, get rid of
         # this csv check. Also needed: checking the header for the SIMULATION keyword
-        if self.data_path.endswith('.csv'):
-            self.raw_data = np.genfromtxt(self.data_path, names=True, delimiter=',')
+        # also have armpit take just the simulation object like so:
+        if type(self.data_path) == ad_phat_tools.simulation:
+            self.raw_data = self.data_path.filename
         elif self.data_path.endswith('.fits'):
             self.raw_data = fits.open(self.data_path)
             self.raw_data = self.raw_data[1].data
             self.raw_data = self.raw_data[np.where(self.raw_data['F814W_ERR']<0.25)]
             self.raw_data = self.raw_data[np.where(self.raw_data['F475W_ERR']<0.25)]
         else:
-            raise ValueError('Data must be in csv or fits formats')        
+            raise ValueError('Data input must either be a fits file with containing the relevant columns or a simulation object.')        
         
 
             
@@ -180,11 +181,10 @@ class armpit(object):
         n = 0
         data_length = limit+0.0
         with open(self.filename, 'wb') as outfile:
-            with open(self.filename,'wb') as outfile:
-                if is_sim == True:
-                    outfile.write('RA,DEC,F336W_NAKED-F475W_NAKED,F475W_NAKED-F814W_NAKED,F475W_NAKED,F336W-F475W_VEGA,F475W-F814W_VEGA,F475W_VEGA,F336W-F475W,F475W-F814W,F475W,A(F475W)_IN,A(F475W)_OUT,A(F475W)_DIFF,Z\n')
-                elif is_sim == False:
-                    outfile.write('RA,DEC,F336W-F475W_VEGA,F475W-F814W_VEGA,F475W_VEGA,F336W-F475W,F475W-F814W,F475W,A(F475W),Z\n')
+            if is_sim == True:
+                outfile.write('RA,DEC,F336W_NAKED-F475W_NAKED,F475W_NAKED-F814W_NAKED,F475W_NAKED,F336W-F475W_VEGA,F475W-F814W_VEGA,F475W_VEGA,F336W-F475W,F475W-F814W,F475W,A(F475W)_IN,A(F475W)_OUT,A(F475W)_DIFF,Z\n')
+            elif is_sim == False:
+                outfile.write('RA,DEC,F336W-F475W_VEGA,F475W-F814W_VEGA,F475W_VEGA,F336W-F475W,F475W-F814W,F475W,A(F475W),Z\n')
         with open(self.filename, 'ab') as outfile:
             for star in self.raw_data[:limit]:
                 new336475, new475814, new475, a475 = self.phart(star)
@@ -271,8 +271,8 @@ class simulation(object):
         redvecs = {'w336f475':[(-1)*(1.225/0.446)], 'f475f814':[(-1)*(1.225/0.61)]}
         
         new_f475 = naked_f475+av_range
-        new_w336f475 = ((naked_f475 - new_f475) + (redvecs['w336f475'] * naked_w336f475))/redvecs['w336f475'])
-        new_f475f814 = ((naked_f475 - new_f475) + (redvecs['f475f814'] * data['F475MAG-F814MAG']))/redvecs['f475f814'])
+        new_w336f475 = ((naked_f475 - new_f475) + redvecs['w336f475'] * naked_w336f475)/redvecs['w336f475']
+        new_f475f814 = ((naked_f475 - new_f475) + redvecs['f475f814'] * naked_f475f814)/redvecs['f475f814']
         
         new_w336 = new_w336f475 + new_f475
         new_f814 = -1 * new_f475f814 - new_f475 
