@@ -244,6 +244,8 @@ class simulation(object):
         self.month = time.strftime('%m')
         self.day = time.strftime('%d')
         self.filename = 'armpit_out/sim_data/armpit_out_{}_{}.csv'.format(self.month,self.day)
+        
+        self.write_data()       
  
     def masslist(self,numstars):
         population = np.random.random(numstars)
@@ -254,7 +256,7 @@ class simulation(object):
         return masses
     
     def interp(self,field):
-        intp_function = intp.interp1d(self.isochrones['M_INI'],
+        intp_function = interpolate.interp1d(self.isochrones['M_INI'],
                                       self.isochrones['{}'.format(field)],
                                       bounds_error = False)
         return intp_function
@@ -266,7 +268,7 @@ class simulation(object):
         naked_w336f475 = naked_w336 - naked_f475
         naked_f475f814 = naked_f475 - naked_f814
         
-        av_range = (3.5)*np.random.random(self.numstars)
+        av_range = (3.5)*np.random.random(len(naked_f475))
 
         redvecs = {'w336f475':[(-1)*(1.225/0.446)], 'f475f814':[(-1)*(1.225/0.61)]}
         
@@ -277,20 +279,32 @@ class simulation(object):
         new_w336 = new_w336f475 + new_f475
         new_f814 = -1 * new_f475f814 - new_f475 
         
+        
+        #ra, dec are dummy counters.  it's helpful for keeping track of individual stars
+        #later and it makes it fit into the format that armpit expects.
         ra = np.linspace(1,self.numstars,self.numstars)
         dec = ra
-        sim_data = np.array([ra,
-                         dec,
-                         naked_w336f475,
-                         naked_f475f814,
-                         naked_f475,
-                         new_w336,
-                         new_f475,
-                         new_f814,
-                         av_range]).T
+        
+        #I don't know how to prepare these columns for a FITS table file nicely,
+        #so this is how it's going for now
+        
+        sim_data = fits.BinTableHDU.from_columns(
+            [fits.Column(name='RA',format='E',array = ra),
+             fits.Column(name='DEC',format = 'E',array = dec),
+             fits.Column(name='NAKED_F336W',format = 'E',array = naked_w336),
+             fits.Column(name='NAKED_F475W',format = 'E',array = naked_f475),
+             fits.Column(name='NAKED_F814W',format = 'E',array = naked_f814),
+             fits.Column(name='AF475W_IN',format = 'E',array = av_range)])
         
         return sim_data
     
     def write_data(self):
-        simulation = self.add_av()
-        #write to fits file, include simulation and isochrone age in header
+        simulation_data = self.add_av()
+        prihdr = fits.Header()
+        prihdr['IS_SIM'] = True
+        prihdr['ISO_AGE'] = self.iso_age
+        prihdu = fits.PrimaryHDU(header=prihdr)
+        
+        hdulist = fits.HDUList([prihdu,simulation_data])
+        
+        hdulist.writeto('sim_out_{}_{}.fits'.format(self.month,self.day),clobber=True)
