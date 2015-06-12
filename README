@@ -1,5 +1,5 @@
 This repo contains all of the code for my analysis of the
 Panchromatic Hubble Andromeda Treasury (PHAT) data.  It was
 written in the summers of 2014 and 2015 at the University of
-Utah.  There is some and test scripts in here; for the most
+Utah.  There are some test scripts in here; for the most
 part, the only thing that matters is ad_phat_tools.py.
