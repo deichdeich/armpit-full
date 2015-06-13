@@ -23,7 +23,7 @@ given data set 'phat_data.fits'
 
 > import ad_phat_tools as apt
 > armpit01 = apt.armpit('phat_data.fits',4) # the two arguments are filename and
-                                            # isochrone age to be used for the analysis
+                                            # isochrone age to be fitted to
 > armpit01.write_data()
 
 The last line will output a CSV file with columns for input colors, dereddened colors,
@@ -54,6 +54,12 @@ Example:
 This last line works exactly the same as armpit01.write_data() above, but it
 will contain more data from the simulation: mass, the colors before Av was added,
 the input Av, and the difference between the input Av and the retrieved Av.
+
+TO DO:
+make a global variable of the mask in armpit.make_plot()
+look at metallicity and CMD of data.  Why are is the max Av so low (1.5)?
+Why is this different than the output from the metal-fitter.py standalone
+script?  They should be exactly the same.
 '''
 
 from astropy.io import fits
@@ -110,8 +116,10 @@ class armpit(object):
         # that's not just an object.
         if 'IS_SIM' in self.data_header:
             self.is_sim = self.data_header['IS_SIM']
+            self.sim_age = self.data_header['SIM_AGE']
         else:
             self.is_sim = False
+            self.sim_age = np.nan
         
         # trim the data
         self.raw_data = self.raw_fits[1].data
@@ -125,29 +133,25 @@ class armpit(object):
 
         self.month = time.strftime('%m')
         self.day = time.strftime('%d')
-        self.filename = 'armpit_out/armpit_out_{}_{}.csv'.format(self.month,self.day)
+        self.filename = 'armpit_out/armpit_out_{}myr_{}_{}.csv'.format(self.iso_age,
+                                                                       self.month,
+                                                                       self.day)
         
     '''
     Arguments: which columns you want, list
     Returns: data from inputted columns
     If argument left blank, loads whole data file
     '''
-    def load_data(self,num=None,cols=()):
+    def load_data(self,*cols):
         filename = self.data()
-        data_cols = np.genfromtxt(filename,names=True,delimiter=',').dtype.names
+        data_cols = np.genfromtxt(filename,names=True,delimiter=',',skip_header=3).dtype.names
         if cols == ():
             req_cols = data_cols
         else:
             req_cols = cols
         
-        data_file_len = len(np.genfromtxt(filename,names=True,delimiter=','))
-        
-        if num == None:
-            skip = 0
-        elif num >= data_file_len:
-            skip = 0
-        else:
-            skip = data_file_len - num
+        data_file_len = len(np.genfromtxt(filename,names=True,delimiter=',',skip_header=3))
+
         
         bad_cols = []
         for col in cols:
@@ -160,8 +164,8 @@ class armpit(object):
             return_data = np.genfromtxt(filename,
                                         names=True,
                                         delimiter=',',
-                                        usecols=req_cols,
-                                        skip_footer=skip)
+                                        skip_header=3,
+                                        usecols=req_cols)
         return return_data
     
     '''
@@ -171,7 +175,7 @@ class armpit(object):
         if os.path.isfile(self.filename):
             return self.filename
         else:
-            'There is no output data for {} yet.  Do write_data() first.'.format(self.data_path)
+            raise IOError('There is no output data for {} yet.  Do write_data() first.'.format(self.data_path))
 
 
     '''
@@ -235,7 +239,18 @@ class armpit(object):
         z = self.metal_interp_function(data_color,data_mag)
         return (z)
 
-    def write_data(self,lim=None):
+
+    def csv_header(self):
+        csvcomments = '# Simulation: {}\n'.format(self.is_sim)+'# Population Age: {}\n'.format(self.sim_age)+'# Fitted Age: {}\n'.format(self.iso_age)
+        if self.is_sim == True:
+            csvhdr = csvcomments+'RA,DEC,MASS,F336W_NAKED-F475W_NAKED,F475W_NAKED-F814W_NAKED,F475W_NAKED,F336W-F475W_VEGA,F475W-F814W_VEGA,F475W_VEGA,F336W-F475W,F475W-F814W,F475W,A(F475W)_IN,A(F475W),A(F475W)_DIFF,Z\n'
+            
+        elif self.is_sim == False:
+            csvhdr = csvcomments+'RA,DEC,F336W-F475W_VEGA,F475W-F814W_VEGA,F475W_VEGA,F336W-F475W,F475W-F814W,F475W,A(F475W),Z\n'
+        return csvhdr
+        
+        
+    def write_data(self,lim=None,draw_plots=False):
         if lim is None:
             limit = len(self.raw_data)
         else:
@@ -245,10 +260,8 @@ class armpit(object):
         n = 0
         data_length = limit+0.0
         with open(self.filename, 'wb') as outfile:
-            if self.is_sim == True:
-                outfile.write('RA,DEC,MASS,F336W_NAKED-F475W_NAKED,F475W_NAKED-F814W_NAKED,F475W_NAKED,F336W-F475W_VEGA,F475W-F814W_VEGA,F475W_VEGA,F336W-F475W,F475W-F814W,F475W,A(F475W)_IN,A(F475W)_OUT,A(F475W)_DIFF,Z\n')
-            elif self.is_sim == False:
-                outfile.write('RA,DEC,F336W-F475W_VEGA,F475W-F814W_VEGA,F475W_VEGA,F336W-F475W,F475W-F814W,F475W,A(F475W),Z\n')
+            outfile.write(self.csv_header())
+            
         with open(self.filename, 'ab') as outfile:
             for star in self.raw_data[:limit]:
                 new336475, new475814, new475, a475 = self.phart(star)
@@ -259,7 +272,7 @@ class armpit(object):
                 if self.is_sim == True:
                     data = (star['RA'],
                             star['DEC'],
-                            star['MASS']
+                            star['MASS'],
                             star['F336W_NAKED']-star['F475W_NAKED'],
                             star['F475W_NAKED']-star['F814W_NAKED'],
                             star['F475W_NAKED'],
@@ -288,11 +301,50 @@ class armpit(object):
                 n += 1
                 sys.stdout.write('\rDoing line {}, {}% done'.format(n,(n/data_length)*100))
                 sys.stdout.flush()
+        if draw_plots == True:
+            self.make_plot('cmd')
+            print 'doing cmd...'
+            self.make_plot('ccd')
+            print 'doing ccd...'
+            
+    # plotting method
+    def make_plot(self,type):
+        import matplotlib.pyplot as plt
+        plottables = self.load_data('F336WF475W_VEGA',
+                                    'F475WF814W_VEGA',
+                                    'F475W_VEGA',
+                                    'F336WF475W',
+                                    'F475WF814W',
+                                    'F475W',
+                                    'AF475W',
+                                    'Z')
+        z_data = np.ma.masked_array(plottables,np.isnan(plottables['Z']))
+        if type == 'ccd':
+            plt.figure()
+            plt.scatter(plottables['F336WF475W_VEGA'],
+                        plottables['F475WF814W_VEGA'],
+                        edgecolors='none',
+                        color='gray')
+            plt.scatter(z_data['F336WF475W_VEGA'],
+                        z_data['F475WF814W_VEGA'],
+                        edgecolors = 'none',
+                        c=plottables['AF475W'])
+            cb = plt.colorbar()
+            
+            cb.set_clim([-0.5,3.5])
+            cb.set_label('A(F475W)')
+            
+            plt.scatter(self.iso_color_x,self.iso_color_y,color='black')
+            
+            plt.xlim(-2,0)
+            plt.ylim(-1,2)
+            plt.savefig('ccd.png')
+            
       
 class simulation(object):
-    def __init__(self,numstars,iso_age):
-        self.iso_age = iso_age
-        self.iso_path = 'isochrones/{}Myr_finez.fits'.format(self.iso_age)
+    def __init__(self,numstars,sim_age):
+        self.sim_age = sim_age
+        self.iso_path = 'isochrones/{}Myr_finez.fits'.format(self.sim_age)
         self.isochrones = fits.open(self.iso_path)
         self.isochrones = self.isochrones[1].data
         self.isochrones = [self.isochrones[np.where(np.logical_and(self.isochrones["M_ini"]<10,
@@ -308,7 +360,9 @@ class simulation(object):
         
         self.month = time.strftime('%m')
         self.day = time.strftime('%d')
-        self.output_file = 'sim_pops/sim_out_{}_{}.fits'.format(self.month,self.day)
+        self.output_file = 'sim_pops/sim_out_{}myr_{}_{}.fits'.format(self.sim_age,
+                                                                   self.month,
+                                                                   self.day)
         
         self.write_data()       
  
@@ -382,7 +436,7 @@ class simulation(object):
         simulation_data = self.add_av()
         prihdr = fits.Header()
         prihdr['IS_SIM'] = True
-        prihdr['ISO_AGE'] = self.iso_age
+        prihdr['SIM_AGE'] = self.sim_age
         prihdu = fits.PrimaryHDU(header=prihdr)
         
         hdulist = fits.HDUList([prihdu,simulation_data])
