@@ -82,6 +82,8 @@ class armpit(object):
         self.isochrones = [self.isochrones[np.where(np.logical_and(self.isochrones["M_ini"]<10,
                                                                    self.isochrones["M_ini"]>2))]][0]
                                                                    
+        self.isochrones = [self.isochrones[np.where((self.isochrones['W336MAG']-self.isochrones['F475MAG'])<0)]][0]
+                                                                   
         self.iso_colors = np.rec.array([(self.isochrones["W336MAG"]-self.isochrones["F475MAG"]),
             (self.isochrones["F475MAG"]-self.isochrones["F814MAG"])],
             names=("Iso(336-475)","Iso(475-814)"))
@@ -92,7 +94,8 @@ class armpit(object):
         self.iso_mag = self.isochrones['F475MAG']
         self.zvalues = self.isochrones['Z']
         
-        self.interp_points = zip(self.iso_color_x,self.iso_mag)
+        #make sure you *don't* use the sorted color for the metallicity interpolation
+        self.interp_points = zip(self.iso_colors['Iso(336-475)'],self.iso_mag)
         self.metal_interp_function = interpolate.LinearNDInterpolator(self.interp_points,
                                                                       self.zvalues)
         
@@ -229,10 +232,10 @@ class armpit(object):
         new336475,new475814,a475 = self.dope((star['F336W_VEGA']-star['F475W_VEGA']),
                                              (star['F475W_VEGA']-star['F814W_VEGA']))
         mag475 = star['F475W_VEGA']
-        new475 = mag475 - 24.4 - a475
+        intrinsic_475 = mag475 - 24.4 - a475
 
 
-        return (new336475,new475814,new475,a475)
+        return (new336475,new475814,intrinsic_475,a475)
     
 
     def metal_fit(self,data_color,data_mag):
@@ -241,7 +244,7 @@ class armpit(object):
 
 
     def csv_header(self):
-        csvcomments = '# Simulation: {}\n'.format(self.is_sim)+'# Population Age: {}\n'.format(self.sim_age)+'# Fitted Age: {}\n'.format(self.iso_age)
+        csvcomments = '# Simulation: {}\n'.format(self.is_sim)+'# Simulated population age: {}\n'.format(self.sim_age)+'# Fitted Age: {}\n'.format(self.iso_age)
         if self.is_sim == True:
             csvhdr = csvcomments+'RA,DEC,MASS,F336W_NAKED-F475W_NAKED,F475W_NAKED-F814W_NAKED,F475W_NAKED,F336W-F475W_VEGA,F475W-F814W_VEGA,F475W_VEGA,F336W-F475W,F475W-F814W,F475W,A(F475W)_IN,A(F475W),A(F475W)_DIFF,Z\n'
             
@@ -328,7 +331,7 @@ class armpit(object):
             plt.scatter(z_data['F336WF475W_VEGA'],
                         z_data['F475WF814W_VEGA'],
                         edgecolors = 'none',
-                        c=plottables['AF475W'])
+                        c=z_data['AF475W'])
             cb = plt.colorbar()
             
             cb.set_clim([-0.5,3.5])
@@ -337,9 +340,36 @@ class armpit(object):
             plt.scatter(self.iso_color_x,self.iso_color_y,color='black')
             
             plt.xlim(-2,0)
+            plt.xlabel('F336W-F475W')
             plt.ylim(-1,2)
-            plt.savefig('ccd.png')
+            plt.ylabel('F475W-F814W')
+            plt.savefig('ccd{}.png'.format(self.iso_age))
             
+        elif type == 'cmd':
+            plt.figure()
+            plt.scatter(plottables['F336WF475W_VEGA'],
+                        plottables['F475W_VEGA'],
+                        edgecolors='none',
+                        color='gray')
+            plt.scatter(z_data['F336WF475W_VEGA'],
+                        z_data['F475W_VEGA']-24.4,
+                        edgecolors = 'none',
+                        c=np.log10(z_data['Z']/0.019))
+            cb = plt.colorbar()
+
+            
+            #cb.set_clim([-0.5,3.5])
+            cb.set_label('log(Z/0.019)')
+            
+            #plt.scatter(self.iso_color_x,self.iso_mag,color='black')
+            
+            plt.xlim(-2,0)
+            plt.ylim(-6,0)
+            plt.xlabel('F336W-F475W')
+            plt.ylabel('F475W')
+            ax = plt.gca()
+            ax.invert_yaxis()
+            plt.savefig('cmd{}.png'.format(self.iso_age))
       
 class simulation(object):
     def __init__(self,numstars,sim_age):
