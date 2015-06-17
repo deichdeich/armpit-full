@@ -68,7 +68,7 @@ import scipy.interpolate as interpolate
 from scipy.optimize import fsolve
 import os.path
 import time
-
+import matplotlib.pyplot as plt
 
 class armpit(object):
 
@@ -232,6 +232,8 @@ class armpit(object):
         new336475,new475814,a475 = self.dope((star['F336W_VEGA']-star['F475W_VEGA']),
                                              (star['F475W_VEGA']-star['F814W_VEGA']))
         mag475 = star['F475W_VEGA']
+        
+        # 24.4: andromeda distance modulus
         intrinsic_475 = mag475 - 24.4 - a475
 
 
@@ -252,7 +254,7 @@ class armpit(object):
             csvhdr = csvcomments+'RA,DEC,F336W-F475W_VEGA,F475W-F814W_VEGA,F475W_VEGA,F336W-F475W,F475W-F814W,F475W,A(F475W),Z\n'
         return csvhdr
         
-        
+       
     def write_data(self,lim=None,draw_plots=False):
         if lim is None:
             limit = len(self.raw_data)
@@ -370,7 +372,72 @@ class armpit(object):
             ax = plt.gca()
             ax.invert_yaxis()
             plt.savefig('cmd{}.png'.format(self.iso_age))
-      
+
+# region_draw class adapted from code by Daniel Kornhauser
+class region_draw(object):
+    def __init__(self, ax, fig):
+        self.previous_point = []
+        self.start_point = []
+        self.end_point = []
+        self.line = None    
+        self.point_list = []
+        self.fig =  fig
+        self.fig.canvas.draw()
+        
+    def button_press_callback(self, event):
+        if event.inaxes: 
+            x, y = event.xdata, event.ydata
+            ax = event.inaxes
+            if event.button == 1:  # If you press the right button
+                    if self.line == None: # if there is no line, create a line
+                        self.line = plt.Line2D([x,  x],
+                                           [y, y],
+                                           marker = 'x')
+                        self.start_point = [x,y]
+                        self.previous_point =  self.start_point 
+                        ax.add_line(self.line)
+                        self.fig.canvas.draw()
+                    # add a segment
+                    else: # if there is a line, create a segment
+                        self.line = plt.Line2D([self.previous_point[0], x], 
+                                           [self.previous_point[1], y],
+                                           marker = 'x')
+                        self.previous_point = [x,y]
+                        event.inaxes.add_line(self.line)
+                        self.fig.canvas.draw()
+                    
+                    self.point_list.append((x,y))
+                    
+            elif event.button == 3 and self.line != None: # close the loop
+                        print self.point_list
+                        self.line = plt.Line2D([self.previous_point[0],
+                                            self.start_point[0]],
+                                           [self.previous_point[1],
+                                            self.start_point[1]],
+                                            marker = 'x')
+                 
+                        ax.add_line(self.line)
+                        self.fig.canvas.draw()
+                        self.line = None
+                        
+        
+
+
+class armplot(object):
+    def __init__(self,):
+        self.blah = 'blah'
+    def skyselect(self):
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        ax.set_title('')
+        cursor = region_draw(ax,fig)
+        fig.canvas.mpl_connect('button_press_event', cursor.button_press_callback)
+        plt.show()
+    #def make_cmd(self,data):
+    #def make_ccd(self,data):
+    #def make_hist(self,data,col)
+    
+
 class simulation(object):
     def __init__(self,numstars,sim_age):
         self.sim_age = sim_age
