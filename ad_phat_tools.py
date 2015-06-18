@@ -263,24 +263,27 @@ class armpit(object):
             print 'doing ccd...'
             
 class data_plot(object):
-    def __init__(self, ax, cmd_ax, ccd_ax,hist_ax,fig,data):
+    def __init__(self,ax, map_fig, plot_fig, cmd_ax, ccd_ax, avhist_ax, zhist_ax, data):
         self.previous_point = []
         self.start_point = []
         self.end_point = []
         self.line = None    
         self.point_list = []
-        self.fig =  fig
-        self.fig.canvas.draw()
+        self.map_fig = map_fig
+        self.map_fig.canvas.draw()
         self.data = data
+        self.plot_fig = plot_fig
+        self.plot_fig.canvas.draw()
         self.cmd_ax = cmd_ax
         self.ccd_ax = ccd_ax
-        self.hist_ax = hist_ax
+        self.avhist_ax = avhist_ax
+        self.zhist_ax = zhist_ax
         self.ax = ax
         
         self.draw_spatial()
         
     def button_press_callback(self, event):
-        if event.inaxes: 
+        if event.inaxes:
             x, y = event.xdata, event.ydata
             if event.button == 1:  # If you press the right button
                     if self.line == None: # if there is no line, create a line
@@ -292,7 +295,7 @@ class data_plot(object):
                         self.start_point = [x,y]
                         self.previous_point =  self.start_point 
                         self.ax.add_line(self.line)
-                        self.fig.canvas.draw()
+                        self.map_fig.canvas.draw()
                     # add a segment
                     else: # if there is a line, create a segment
                         self.line = plt.Line2D([self.previous_point[0], x], 
@@ -302,7 +305,7 @@ class data_plot(object):
                                            linewidth = 3)
                         self.previous_point = [x,y]
                         event.inaxes.add_line(self.line)
-                        self.fig.canvas.draw()
+                        self.map_fig.canvas.draw()
                     
                     self.point_list.append((x,y))
                     
@@ -317,7 +320,7 @@ class data_plot(object):
                                             linewidth = 3)
                  
                         self.ax.add_line(self.line)
-                        self.fig.canvas.draw()
+                        self.map_fig.canvas.draw()
                         self.line = None
             
     def key_press_callback(self,event):
@@ -333,33 +336,41 @@ class data_plot(object):
         if event.key == '1':
             colorlist1,colorlist2,maglist = self.get_data_in_region()
             print len(colorlist1)
-            self.make_cmd(self.cmd_ax,self.fig,maglist,colorlist1)
+            self.make_cmd(self.cmd_ax,self.plot_fig,maglist,colorlist1)
         elif event.key == 'ctrl+1':
-            extent = self.cmd_ax.get_window_extent().transformed(self.fig.dpi_scale_trans.inverted())
-            self.fig.savefig('awesomecmd.png', bbox_inches = extent)
+            extent = self.cmd_ax.get_window_extent().transformed(self.plot_fig.dpi_scale_trans.inverted())
+            self.plot_fig.savefig('awesomecmd.png', bbox_inches = extent)
             print 'saved '
         elif event.key == '2':
             colorlist1,colorlist2,maglist = self.get_data_in_region()
             print event.key
-            self.make_ccd(self.ccd_ax,self.fig,colorlist1,colorlist2)
+            self.make_ccd(self.ccd_ax,self.plot_fig,colorlist1,colorlist2)
         elif event.key == 'c':
             self.point_list = []
             self.cmd_ax.clear()
             self.ccd_ax.clear()
             self.ax.clear()
             self.draw_spatial()
-            self.fig.canvas.draw()
+            self.map_fig.canvas.draw()
+            self.plot_fig.canvas.draw()
             
     
     def get_data_in_region(self):
         colorlist1 = []
         colorlist2 = []
         maglist = []
-        for star in self.data:
-            if self.point_in_poly(star['RA'],star['DEC'],self.point_list):
-                colorlist1.append(star['F336WF475W_VEGA'])
-                colorlist2.append(star['F475WF814W_VEGA'])
-                maglist.append(star['F475W_VEGA']-24.4)
+        if self.point_list == []:
+            colorlist1,colorlist2,maglist = (self.data['F336WF475W_VEGA'],
+                                             self.data['F475WF814W_VEGA'],
+                                             self.data['F475W_VEGA']-24.4)
+            
+        else:
+            for star in self.data:
+                if self.point_in_poly(star['RA'],star['DEC'],self.point_list):
+                    colorlist1.append(star['F336WF475W_VEGA'])
+                    colorlist2.append(star['F475WF814W_VEGA'])
+                    maglist.append(star['F475W_VEGA']-24.4)
+                    
         return colorlist1,colorlist2,maglist
     
     def draw_spatial(self):
@@ -387,7 +398,7 @@ class data_plot(object):
         n = len(poly)
         inside = False
         p1x,p1y = poly[0]
-        for i in range(n+1):
+        for i in xrange(n+1):
             p2x,p2y = poly[i % n]
             if y > min(p1y,p2y):
                 if y <= max(p1y,p2y):
@@ -400,24 +411,27 @@ class data_plot(object):
         return inside
 
 
-# TO DO: put the map in a different figure than the plots 
-# so as to have a bigger image
-# also: if there has been no region defined, then make plots of the whole data.
+# TO DO:
+# if there has been no region defined, then make plots of the whole data.
 # also: make histogram methods (which will also necessitate the dictionarizing of
 # the regions), and make all plotting methods make full-quality plots
 class armplot(object):
     def __init__(self,data_object):
         self.data = data_object.load_data()
     def skyselect(self):
-        fig = plt.figure()
-        ax = fig.add_subplot(221)
-        cmd_ax = fig.add_subplot(222)
-        ccd_ax = fig.add_subplot(223)
-        hist_ax = fig.add_subplot(224)
+        map_fig = plt.figure()
+        ax = map_fig.add_subplot(111)
+        
+        plot_fig = plt.figure()
+        cmd_ax = plot_fig.add_subplot(221)
+        ccd_ax = plot_fig.add_subplot(222)
+        avhist_ax = plot_fig.add_subplot(223)
+        zhist_ax = plot_fig.add_subplot(224)
         ax.set_title('')
-        cursor = data_plot(ax,cmd_ax,ccd_ax,hist_ax,fig,self.data)
-        fig.canvas.mpl_connect('button_press_event', cursor.button_press_callback)
-        fig.canvas.mpl_connect('key_release_event',cursor.key_press_callback)
+        cursor = data_plot(ax,map_fig,plot_fig,cmd_ax,ccd_ax,avhist_ax,zhist_ax,self.data)
+        map_fig.canvas.mpl_connect('button_press_event', cursor.button_press_callback)
+        map_fig.canvas.mpl_connect('key_release_event',cursor.key_press_callback)
+        plot_fig.canvas.mpl_connect('key_release_event',cursor.key_press_callback)
         plt.show()
 
 class simulation(object):
