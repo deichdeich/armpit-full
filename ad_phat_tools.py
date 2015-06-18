@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 
 class armpit(object):
 
-    def __init__(self,data_path,iso_age):
+    def __init__(self,data_path,iso_age,usefile = None):
     
         # get isochrone and chop out the part we're interested in (the nondegenerate part)
         self.iso_age = iso_age
@@ -54,7 +54,7 @@ class armpit(object):
         elif self.data_path.endswith('.fits'):
             self.raw_file = self.data_path
         else:
-            raise IOError('Data input must either be a fits or csv file with containing the relevant columns or a simulation object.')
+            raise IOError('Data input must either be a fits file with containing the relevant columns or a simulation object.')
         
         self.raw_fits = fits.open(self.raw_file)
         
@@ -82,9 +82,13 @@ class armpit(object):
 
         self.month = time.strftime('%m')
         self.day = time.strftime('%d')
-        self.filename = 'armpit_out/armpit_out_{}myr_{}_{}.csv'.format(self.iso_age,
+        self.usefile = usefile
+        if self.usefile == None:
+            self.filename = 'armpit_out/armpit_out_{}myr_{}_{}.csv'.format(self.iso_age,
                                                                        self.month,
                                                                        self.day)
+        else:
+            self.filename = self.usefile
         
     '''
     Arguments: which columns you want, list
@@ -258,70 +262,8 @@ class armpit(object):
             self.make_plot('ccd')
             print 'doing ccd...'
             
-    # plotting method
-    def make_plot(self,type):
-        import matplotlib.pyplot as plt
-        plottables = self.load_data('F336WF475W_VEGA',
-                                    'F475WF814W_VEGA',
-                                    'F475W_VEGA',
-                                    'F336WF475W',
-                                    'F475WF814W',
-                                    'F475W',
-                                    'AF475W',
-                                    'Z')
-        z_data = np.ma.masked_array(plottables,np.isnan(plottables['Z']))
-        if type == 'ccd':
-            plt.figure()
-            plt.scatter(plottables['F336WF475W_VEGA'],
-                        plottables['F475WF814W_VEGA'],
-                        edgecolors='none',
-                        color='gray')
-            plt.scatter(z_data['F336WF475W_VEGA'],
-                        z_data['F475WF814W_VEGA'],
-                        edgecolors = 'none',
-                        c=z_data['AF475W'])
-            cb = plt.colorbar()
-            
-            cb.set_clim([-0.5,3.5])
-            cb.set_label('A(F475W)')
-            
-            plt.scatter(self.iso_color_x,self.iso_color_y,color='black')
-            
-            plt.xlim(-2,0)
-            plt.xlabel('F336W-F475W')
-            plt.ylim(-1,2)
-            plt.ylabel('F475W-F814W')
-            plt.savefig('ccd{}.png'.format(self.iso_age))
-            
-        elif type == 'cmd':
-            plt.figure()
-            plt.scatter(plottables['F336WF475W_VEGA'],
-                        plottables['F475W_VEGA'],
-                        edgecolors='none',
-                        color='gray')
-            plt.scatter(z_data['F336WF475W_VEGA'],
-                        z_data['F475W_VEGA']-24.4,
-                        edgecolors = 'none',
-                        c=np.log10(z_data['Z']/0.019))
-            cb = plt.colorbar()
-
-            
-            #cb.set_clim([-0.5,3.5])
-            cb.set_label('log(Z/0.019)')
-            
-            #plt.scatter(self.iso_color_x,self.iso_mag,color='black')
-            
-            plt.xlim(-2,0)
-            plt.ylim(-6,0)
-            plt.xlabel('F336W-F475W')
-            plt.ylabel('F475W')
-            ax = plt.gca()
-            ax.invert_yaxis()
-            plt.savefig('cmd{}.png'.format(self.iso_age))
-
-# region_draw class adapted from code by Daniel Kornhauser
-class region_draw(object):
-    def __init__(self, ax, fig):
+class data_plot(object):
+    def __init__(self, ax, cmd_ax, ccd_ax,hist_ax,fig,data):
         self.previous_point = []
         self.start_point = []
         self.end_point = []
@@ -329,25 +271,35 @@ class region_draw(object):
         self.point_list = []
         self.fig =  fig
         self.fig.canvas.draw()
+        self.data = data
+        self.cmd_ax = cmd_ax
+        self.ccd_ax = ccd_ax
+        self.hist_ax = hist_ax
+        self.ax = ax
+        
+        self.draw_spatial()
         
     def button_press_callback(self, event):
         if event.inaxes: 
             x, y = event.xdata, event.ydata
-            ax = event.inaxes
             if event.button == 1:  # If you press the right button
                     if self.line == None: # if there is no line, create a line
                         self.line = plt.Line2D([x,  x],
                                            [y, y],
-                                           marker = 'x')
+                                           marker = 'o',
+                                           color = 'black',
+                                           linewidth = 3)
                         self.start_point = [x,y]
                         self.previous_point =  self.start_point 
-                        ax.add_line(self.line)
+                        self.ax.add_line(self.line)
                         self.fig.canvas.draw()
                     # add a segment
                     else: # if there is a line, create a segment
                         self.line = plt.Line2D([self.previous_point[0], x], 
                                            [self.previous_point[1], y],
-                                           marker = 'x')
+                                           marker = 'o',
+                                           color = 'black',
+                                           linewidth = 3)
                         self.previous_point = [x,y]
                         event.inaxes.add_line(self.line)
                         self.fig.canvas.draw()
@@ -360,30 +312,113 @@ class region_draw(object):
                                             self.start_point[0]],
                                            [self.previous_point[1],
                                             self.start_point[1]],
-                                            marker = 'x')
+                                            marker = 'o',
+                                            color = 'black',
+                                            linewidth = 3)
                  
-                        ax.add_line(self.line)
+                        self.ax.add_line(self.line)
                         self.fig.canvas.draw()
                         self.line = None
-                        
+            
+    def key_press_callback(self,event):
+                
         
+        
+        # the keys I want to define are: clear point_list and plots: (c)
+        #                                make cmd,ccd,zhist,avhist: ('1','2','3','4')
+        #                                save cmd,ccd,zhist,zvhist: (ctrl + 1,2,3 or 4)
+        #                                do/save all: (a)/(ctrl+a) 
+        
+        
+        if event.key == '1':
+            colorlist1,colorlist2,maglist = self.get_data_in_region()
+            print len(colorlist1)
+            self.make_cmd(self.cmd_ax,self.fig,maglist,colorlist1)
+        elif event.key == 'ctrl+1':
+            extent = self.cmd_ax.get_window_extent().transformed(self.fig.dpi_scale_trans.inverted())
+            self.fig.savefig('awesomecmd.png', bbox_inches = extent)
+            print 'saved '
+        elif event.key == '2':
+            colorlist1,colorlist2,maglist = self.get_data_in_region()
+            print event.key
+            self.make_ccd(self.ccd_ax,self.fig,colorlist1,colorlist2)
+        elif event.key == 'c':
+            self.point_list = []
+            self.cmd_ax.clear()
+            self.ccd_ax.clear()
+            self.ax.clear()
+            self.draw_spatial()
+            self.fig.canvas.draw()
+            
+    
+    def get_data_in_region(self):
+        colorlist1 = []
+        colorlist2 = []
+        maglist = []
+        for star in self.data:
+            if self.point_in_poly(star['RA'],star['DEC'],self.point_list):
+                colorlist1.append(star['F336WF475W_VEGA'])
+                colorlist2.append(star['F475WF814W_VEGA'])
+                maglist.append(star['F475W_VEGA']-24.4)
+        return colorlist1,colorlist2,maglist
+    
+    def draw_spatial(self):
+        self.ax.set_title('Spatial Map')
+        self.ax.scatter(self.data['RA'],
+                        self.data['DEC'],
+                        s = 1,
+                        edgecolors = 'none',
+                        c=self.data['Z'])
+    
+    def make_cmd(self,ax,fig,magdata,colordata):
+        ax.scatter(colordata,magdata,edgecolors='none',c='black')
+        ax.set_title('CMD of selected region(s)')
+        ax.set_xlim(-2,0)
+        ax.set_ylim(-6,0)
+        ax.invert_yaxis()
+        fig.canvas.draw()
+    def make_ccd(self,ax,fig,color1,color2):
+        ax.scatter(color1,color2,edgecolors='none',c='black')
+        ax.set_title('CCD of selected region(s)')
+        ax.set_xlim(-2,0)
+        ax.set_ylim(-1,2)
+        fig.canvas.draw()
+    def point_in_poly(self,x,y,poly):
+        n = len(poly)
+        inside = False
+        p1x,p1y = poly[0]
+        for i in range(n+1):
+            p2x,p2y = poly[i % n]
+            if y > min(p1y,p2y):
+                if y <= max(p1y,p2y):
+                    if x <= max(p1x,p2x):
+                        if p1y != p2y:
+                            xints = (y-p1y)*(p2x-p1x)/(p2y-p1y)+p1x
+                        if p1x == p2x or x <= xints:
+                            inside = not inside
+            p1x,p1y = p2x,p2y
+        return inside
 
 
+# TO DO: put the map in a different figure than the plots 
+# so as to have a bigger image
+# also: if there has been no region defined, then make plots of the whole data.
+# also: make histogram methods (which will also necessitate the dictionarizing of
+# the regions), and make all plotting methods make full-quality plots
 class armplot(object):
-    def __init__(self,):
-        self.blah = 'blah'
+    def __init__(self,data_object):
+        self.data = data_object.load_data()
     def skyselect(self):
         fig = plt.figure()
-        ax = fig.add_subplot(111)
+        ax = fig.add_subplot(221)
+        cmd_ax = fig.add_subplot(222)
+        ccd_ax = fig.add_subplot(223)
+        hist_ax = fig.add_subplot(224)
         ax.set_title('')
-        cursor = region_draw(ax,fig)
+        cursor = data_plot(ax,cmd_ax,ccd_ax,hist_ax,fig,self.data)
         fig.canvas.mpl_connect('button_press_event', cursor.button_press_callback)
+        fig.canvas.mpl_connect('key_release_event',cursor.key_press_callback)
         plt.show()
-    #def make_cmd(self,data):
-    
-    #def make_ccd(self,data):
-    #def make_hist(self,data,col)
-    
 
 class simulation(object):
     def __init__(self,numstars,sim_age):
