@@ -13,6 +13,7 @@ from scipy.optimize import fsolve
 import os.path
 import time
 import matplotlib.pyplot as plt
+import numpy.lib.recfunctions as rfn
 
 class armpit(object):
 
@@ -263,12 +264,17 @@ class armpit(object):
             print 'doing ccd...'
             
 class data_plot(object):
+### To do: be able to write out and save a dictionary of regions
+###  and then be able to pass it this dictionary again.
+###  and figure out why the cmd is wonky
+###  and make all plots look final
+
     def __init__(self,ax, map_fig, plot_fig, cmd_ax, ccd_ax, avhist_ax, zhist_ax, data):
         self.previous_point = []
         self.start_point = []
         self.end_point = []
         self.line = None    
-        self.point_list = []
+        self.point_list = {}
         self.map_fig = map_fig
         self.map_fig.canvas.draw()
         self.data = data
@@ -279,19 +285,36 @@ class data_plot(object):
         self.avhist_ax = avhist_ax
         self.zhist_ax = zhist_ax
         self.ax = ax
+        self.star_arr = np.zeros((len(self.data),1),dtype=[('REGION_NUM',int)])
+        self.star_arr['REGION_NUM'] += 999
+        self.region_arr = rfn.merge_arrays([self.data,self.star_arr],flatten = True)
+        
+        self.region_counter = 0
         
         self.draw_spatial()
         
+        self.color_list = ['red','blue','green','purple','black']
+        self.color_num = 0
+        self.color_mod = 0
+        
+        self.region_data = 0
+        self.region_check = False
+        
     def button_press_callback(self, event):
         if event.inaxes:
+        #if there is no previous_point, create a new key in the point_list dictionary.
+        #in either case, put x,y in the most recent key.
+            if self.previous_point == []:
+                self.region_counter += 1
+                self.point_list[self.region_counter] = []
             x, y = event.xdata, event.ydata
             if event.button == 1:  # If you press the right button
                     if self.line == None: # if there is no line, create a line
                         self.line = plt.Line2D([x,  x],
                                            [y, y],
                                            marker = 'o',
-                                           color = 'black',
-                                           linewidth = 3)
+                                           color = self.color_list[self.color_num],
+                                           linewidth = 2)
                         self.start_point = [x,y]
                         self.previous_point =  self.start_point 
                         self.ax.add_line(self.line)
@@ -301,32 +324,35 @@ class data_plot(object):
                         self.line = plt.Line2D([self.previous_point[0], x], 
                                            [self.previous_point[1], y],
                                            marker = 'o',
-                                           color = 'black',
-                                           linewidth = 3)
+                                           color = self.color_list[self.color_num],
+                                           linewidth = 2)
                         self.previous_point = [x,y]
                         event.inaxes.add_line(self.line)
                         self.map_fig.canvas.draw()
-                    
-                    self.point_list.append((x,y))
+                
+                    self.point_list[self.region_counter].append((x,y))
                     
             elif event.button == 3 and self.line != None: # close the loop
-                        print self.point_list
+                        print self.point_list.keys()
                         self.line = plt.Line2D([self.previous_point[0],
                                             self.start_point[0]],
                                            [self.previous_point[1],
                                             self.start_point[1]],
                                             marker = 'o',
-                                            color = 'black',
-                                            linewidth = 3)
-                 
+                                            color = self.color_list[self.color_num],
+                                            linewidth = 2)
+                        self.color_mod += 1
+                        self.color_num = self.color_mod%len(self.color_list)
+                        self.previous_point = []
                         self.ax.add_line(self.line)
                         self.map_fig.canvas.draw()
                         self.line = None
+                        self.region_check = False
+                        
+                        
             
-    def key_press_callback(self,event):
-                
-        
-        
+            
+    def key_press_callback(self,event): 
         # the keys I want to define are: clear point_list and plots: (c)
         #                                make cmd,ccd,zhist,avhist: ('1','2','3','4')
         #                                save cmd,ccd,zhist,zvhist: (ctrl + 1,2,3 or 4)
@@ -334,50 +360,106 @@ class data_plot(object):
         
         
         if event.key == '1':
-            colorlist1,colorlist2,maglist = self.get_data_in_region()
-            print len(colorlist1)
-            self.make_cmd(self.cmd_ax,self.plot_fig,maglist,colorlist1)
+            if self.point_list == {}:
+                color_data = self.data['F336WF475W_VEGA']
+                mag_data = self.data['F475W_VEGA']
+            else:
+                self.set_data()
+                color_data = self.region_data['F336WF475W_VEGA']
+                mag_data = self.region_data['F475W_VEGA']
+            
+            self.make_cmd(self.cmd_ax,
+                          self.plot_fig,
+                          color_data,
+                          mag_data-24.4)
+        
         elif event.key == 'ctrl+1':
             extent = self.cmd_ax.get_window_extent().transformed(self.plot_fig.dpi_scale_trans.inverted())
             self.plot_fig.savefig('awesomecmd.png', bbox_inches = extent)
             print 'saved '
+        
         elif event.key == '2':
-            colorlist1,colorlist2,maglist = self.get_data_in_region()
-            print event.key
-            self.make_ccd(self.ccd_ax,self.plot_fig,colorlist1,colorlist2)
+            if self.point_list == {}:
+                color1_data = self.data['F336WF475W_VEGA']
+                color2_data = self.data['F475WF814W_VEGA'] 
+            else:
+                self.set_data()
+                color1_data = self.region_data['F336WF475W_VEGA']
+                color2_data = self.region_data['F475WF814W_VEGA']
+                    
+            self.make_ccd(self.ccd_ax,
+                          self.plot_fig,
+                          color1_data,
+                          color2_data)
+        
+        elif event.key == '3':
+            if self.point_list == {}:
+                histdata = self.data['Z']
+                self.make_hist(self.zhist_ax,self.plot_fig,histdata,1,-1,.25)
+            else:
+                self.set_data()
+                for region in self.point_list:
+                    histdata = self.region_data[self.region_data['REGION_NUM']==region]
+                    histdata = np.log10(histdata['Z']/0.019)
+                    self.make_hist(self.zhist_ax,self.plot_fig,histdata,region,-1,.25)
+                
+                self.zhist_ax.set_title('Histogram of log(Z/0.019) for selected regions')
+        
+        elif event.key == '4':
+            if self.point_list == {}:
+                avdata = self.data['A(F475W)']
+                self.make_hist(self.avhist_ax,self.plot_fig,histdata,1,0,3.5)
+            else:
+                self.set_data()
+                for region in self.point_list:
+                    histdata = self.region_data[self.region_data['REGION_NUM']==region]
+                    histdata = histdata['AF475W']
+                    self.make_hist(self.avhist_ax,self.plot_fig,histdata,region,0,3.5)
+                
+                self.avhist_ax.set_title('Histogram of A(F475W) for selected regions')
+            
         elif event.key == 'c':
-            self.point_list = []
+            self.region_counter = 0
+            self.point_list = {}
             self.cmd_ax.clear()
             self.ccd_ax.clear()
+            self.zhist_ax.clear()
+            self.avhist_ax.clear()
             self.ax.clear()
             self.draw_spatial()
             self.map_fig.canvas.draw()
             self.plot_fig.canvas.draw()
+            self.color_num = 0
+            self.color_mod = 0
+            self.line = None
+            self.region_check = False
+            self.region_arr['REGION_NUM'] = 999
             
-    
-    def get_data_in_region(self):
-        colorlist1 = []
-        colorlist2 = []
-        maglist = []
-        if self.point_list == []:
-            colorlist1,colorlist2,maglist = (self.data['F336WF475W_VEGA'],
-                                             self.data['F475WF814W_VEGA'],
-                                             self.data['F475W_VEGA']-24.4)
-            
+    def set_data(self):
+        if self.region_check == False:
+            print 'Getting stars in region(s)\n'
+            self.region_data = self.get_star_in_region()
+            self.region_check = True
+            for region in self.point_list:
+                print 'found {} stars in region {}'.format(len(self.region_data[self.region_data['REGION_NUM'] == region]),region)
         else:
-            for star in self.data:
-                if self.point_in_poly(star['RA'],star['DEC'],self.point_list):
-                    colorlist1.append(star['F336WF475W_VEGA'])
-                    colorlist2.append(star['F475WF814W_VEGA'])
-                    maglist.append(star['F475W_VEGA']-24.4)
-                    
-        return colorlist1,colorlist2,maglist
+            pass
+    
+    def get_star_in_region(self):
+        for star in self.region_arr:
+            if star['REGION_NUM'] == 999:
+                for region in self.point_list:
+                    if self.point_in_poly(star['RA'],star['DEC'],self.point_list[region]):
+                        star['REGION_NUM'] = region
+            else:
+                pass
+        return self.region_arr[self.region_arr['REGION_NUM']!=999]
     
     def draw_spatial(self):
         self.ax.set_title('Spatial Map')
         self.ax.scatter(self.data['RA'],
                         self.data['DEC'],
-                        s = 1,
+                        s = 2,
                         edgecolors = 'none',
                         c=self.data['Z'])
     
@@ -394,6 +476,19 @@ class data_plot(object):
         ax.set_xlim(-2,0)
         ax.set_ylim(-1,2)
         fig.canvas.draw()
+    
+    def make_hist(self,ax,fig,value,region_color,xmin,xmax):
+        plot_data = value[~np.isnan(value)]
+        histcolor = self.color_list[region_color-1]
+        n, bins, patches = ax.hist(plot_data, 
+                                   50, 
+                                   normed=1,
+                                   cumulative = True,
+                                   histtype='step',
+                                   color = histcolor)
+        ax.set_xlim(xmin,xmax)
+        fig.canvas.draw()
+    
     def point_in_poly(self,x,y,poly):
         n = len(poly)
         inside = False
@@ -417,7 +512,12 @@ class data_plot(object):
 # the regions), and make all plotting methods make full-quality plots
 class armplot(object):
     def __init__(self,data_object):
+        print '\n loading {}... \n'.format(data_object.filename)
+    
         self.data = data_object.load_data()
+        
+        print '\n{} with {} data points loaded.'.format(data_object.filename,
+                                                      len(self.data))
     def skyselect(self):
         map_fig = plt.figure()
         ax = map_fig.add_subplot(111)
