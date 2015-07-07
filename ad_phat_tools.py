@@ -11,6 +11,7 @@ import numpy as np
 import scipy.interpolate as interpolate
 from scipy.optimize import fsolve
 import os.path
+import os
 import time
 import matplotlib.pyplot as plt
 import numpy.lib.recfunctions as rfn
@@ -290,9 +291,9 @@ class data_plot(object):
                     ax,
                     map_fig, 
                     plot_fig,
-                    #cmd_ax,
-                    #ccd_ax,
-                    #avhist_ax,
+                    cmd_ax,
+                    ccd_ax,
+                    avhist_ax,
                     zhist_ax,
                     data,
                     point_list = {}):
@@ -306,9 +307,9 @@ class data_plot(object):
         self.data = data
         self.plot_fig = plot_fig
         self.plot_fig.canvas.draw()
-        #self.cmd_ax = cmd_ax
-        #self.ccd_ax = ccd_ax
-        #self.avhist_ax = avhist_ax
+        self.cmd_ax = cmd_ax
+        self.ccd_ax = ccd_ax
+        self.avhist_ax = avhist_ax
         self.zhist_ax = zhist_ax
         self.ax = ax
         self.star_arr = np.zeros((len(self.data),1),dtype=[('REGION_NUM',int)])
@@ -553,14 +554,14 @@ class armplot(object):
         ax = map_fig.add_subplot(111)
         
         plot_fig = plt.figure()
-        #cmd_ax = plot_fig.add_subplot(221)
-        #ccd_ax = plot_fig.add_subplot(222)
-        #avhist_ax = plot_fig.add_subplot(223)
+        cmd_ax = plot_fig.add_subplot(221)
+        ccd_ax = plot_fig.add_subplot(222)
+        avhist_ax = plot_fig.add_subplot(223)
         zhist_ax = plot_fig.add_subplot(111)
         ax.set_title('')
-        cursor = data_plot(ax,map_fig,plot_fig,#cmd_ax,
-                                                #ccd_ax,
-                                                #avhist_ax,
+        cursor = data_plot(ax,map_fig,plot_fig,cmd_ax,
+                                                ccd_ax,
+                                                avhist_ax,
                                                 zhist_ax,self.data)
         map_fig.canvas.mpl_connect('button_press_event', cursor.button_press_callback)
         map_fig.canvas.mpl_connect('key_release_event',cursor.key_press_callback)
