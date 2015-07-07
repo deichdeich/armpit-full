@@ -281,7 +281,7 @@ class armpit(object):
             self.make_plot('ccd')
             print 'doing ccd...'
             
-class data_plot(object):
+class region_draw(object):
 ### To do: be able to write out and save a dictionary of regions
 ###  and then be able to pass it this dictionary again.
 ###  and figure out why the cmd is wonky
@@ -559,7 +559,7 @@ class armplot(object):
         avhist_ax = plot_fig.add_subplot(223)
         zhist_ax = plot_fig.add_subplot(111)
         ax.set_title('')
-        cursor = data_plot(ax,map_fig,plot_fig,cmd_ax,
+        cursor = region_draw(ax,map_fig,plot_fig,cmd_ax,
                                                 ccd_ax,
                                                 avhist_ax,
                                                 zhist_ax,self.data)
