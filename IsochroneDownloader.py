@@ -6,10 +6,12 @@ import os
 
 
 
-# Downloads PADOVA isochrones of many ages
+# Downloads Padova isochrones of many ages
 # with the parameters I want and converts them to fits
 # mechanize is difficult to do correctly. It is almost definitely not
 # totally kosher in this implementation.
+
+isochrone_dir = '.' #INSERT ISOCHRONE DIRECTORY HERE
 
 for age in np.arange(5,101,.5):
     response = mechanize.urlopen('http://stev.oapd.inaf.it/cgi-bin/cmd')
@@ -33,12 +35,16 @@ for age in np.arange(5,101,.5):
     br = mechanize.Browser()
     br.retrieve(
                 'http://stev.oapd.inaf.it/~lgirardi/tmp/{}'.format(iso_filename),
-                os.path.join('./shitload_of_isochrones',dat_filename.format(age))
+                os.path.join('./{}'.format(isochrone_dir),dat_filename.format(age))
                 )
     
     
-    os.system('./stilts tcopy shitload_of_isochrones/{} shitload_of_isochrones/{} ifmt=ascii ofmt=fits'.format(dat_filename,fits_filename))
-    os.system('rm shitload_of_isochrones/{}'.format(dat_filename))
+    os.system('./stilts tcopy {}/{} {}/{} ifmt=ascii ofmt=fits'.format(isochrone_dir,
+                                                                       dat_filename,
+                                                                       isochrone_dir,
+                                                                       fits_filename))
+    os.system('rm {}/{}'.format(isochrone_dir,
+                                dat_filename))
 
     print '{}Myr isochrone downloaded & converted'.format(age)
         
