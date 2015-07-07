@@ -53,7 +53,7 @@ class armpit(object):
         # get the path of the fits file 
         
         ### TO DO: make it accept csv files   
-        if type(self.data_path) is simulation:
+        if type(self.data_path) is SingleAgeSimulation:
             self.raw_file = self.data_path.output_file
         elif self.data_path.endswith('.fits'):
             self.raw_file = self.data_path
@@ -235,7 +235,7 @@ class armpit(object):
             
         with open(self.filename, 'ab') as outfile:
             for star in self.raw_data[:limit]:
-                if self.extinct_col = None:
+                if self.extinct_col == None:
                     new336475, new475814, new475, a475 = self.phart(star)
                 else:
                     new336475, new475814, new475, a475 = self.subtract_av(star,self.extinct_col)
@@ -290,7 +290,10 @@ class region_draw(object):
     def __init__(self,
                     ax,
                     map_fig, 
-                    plot_fig,
+                    zplot_fig,
+                    cmdplot_fig,
+                    ccdplot_fig,
+                    avplot_fig,
                     cmd_ax,
                     ccd_ax,
                     avhist_ax,
@@ -304,9 +307,16 @@ class region_draw(object):
         self.point_list = point_list
         self.map_fig = map_fig
         self.map_fig.canvas.draw()
+        self.map_fig.canvas.set_window_title('Spatial Map')
         self.data = data
-        self.plot_fig = plot_fig
-        self.plot_fig.canvas.draw()
+        self.zplot_fig = zplot_fig
+        self.zplot_fig.canvas.set_window_title('Metallicity Histogram')
+        self.avplot_fig = avplot_fig
+        self.avplot_fig.canvas.set_window_title('Av Histogram')
+        self.cmdplot_fig = cmdplot_fig
+        self.cmdplot_fig.canvas.set_window_title('Color-Magnitude Diagram')
+        self.ccdplot_fig = ccdplot_fig
+        self.ccdplot_fig.canvas.set_window_title('Color-Color Diagram')
         self.cmd_ax = cmd_ax
         self.ccd_ax = ccd_ax
         self.avhist_ax = avhist_ax
@@ -327,7 +337,8 @@ class region_draw(object):
         
         self.region_data = 0
         self.region_check = False
-        
+    def __call__(self):
+        self.point_list = {}
     def button_press_callback(self, event):
         if event.inaxes:
         #if there is no previous_point, create a new key in the point_list dictionary.
@@ -388,63 +399,88 @@ class region_draw(object):
         
         
         if event.key == '1':
+            self.cmdplot_fig.canvas.draw()
             if self.point_list == {}:
                 color_data = self.data['F336WF475W_VEGA']
                 mag_data = self.data['F475W_VEGA']-24.4
+                z_data = np.log10(self.data['Z']/0.019)
             else:
                 self.set_data()
                 color_data = self.region_data['F336WF475W_VEGA']
                 mag_data = self.region_data['F475W_VEGA']-24.4
+                z_data = np.log10(self.region_data['Z']/0.019)
             
             self.make_cmd(self.cmd_ax,
-                          self.plot_fig,
+                          self.cmdplot_fig,
                           color_data,
-                          mag_data)
-        
-        elif event.key == 'ctrl+1':
-            extent = self.cmd_ax.get_window_extent().transformed(self.plot_fig.dpi_scale_trans.inverted())
-            self.plot_fig.savefig('awesomecmd.png', bbox_inches = extent)
-            print 'saved '
+                          mag_data,
+                          z_data)
         
         elif event.key == '2':
+            self.ccdplot_fig.canvas.draw()
             if self.point_list == {}:
                 color1_data = self.data['F336WF475W_VEGA']
-                color2_data = self.data['F475WF814W_VEGA'] 
+                color2_data = self.data['F475WF814W_VEGA']
+                av_data = self.data['AF475W'] 
             else:
                 self.set_data()
                 color1_data = self.region_data['F336WF475W_VEGA']
                 color2_data = self.region_data['F475WF814W_VEGA']
+                av_data = self.region_data['AF475W']
                     
             self.make_ccd(self.ccd_ax,
-                          self.plot_fig,
+                          self.ccdplot_fig,
                           color1_data,
-                          color2_data)
+                          color2_data,
+                          av_data)
         
         elif event.key == '3':
+            self.zplot_fig.canvas.draw()
             if self.point_list == {}:
                 histdata = self.data['Z']
-                self.make_hist(self.zhist_ax,self.plot_fig,histdata,1,-1,.25)
+                self.make_hist(self.zhist_ax,self.zplot_fig,histdata,1,-1,.25)
             else:
                 self.set_data()
                 for region in self.point_list:
                     histdata = self.region_data[self.region_data['REGION_NUM']==region]
                     histdata = np.log10(histdata['Z']/0.019)
-                    self.make_hist(self.zhist_ax,self.plot_fig,histdata,region,-1,.25)
+                    self.make_hist(self.zhist_ax,self.zplot_fig,histdata,region,-1,.25)
                 
                 self.zhist_ax.set_title('Histogram of log(Z/0.019) for selected regions')
         
         elif event.key == '4':
+            self.avplot_fig.canvas.draw()
             if self.point_list == {}:
                 histdata = self.data['AF475W']
-                self.make_hist(self.avhist_ax,self.plot_fig,histdata,1,0,max(self.data['AF475W']))
+                self.make_hist(self.avhist_ax,self.avplot_fig,histdata,1,0,max(self.data['AF475W']))
             else:
                 self.set_data()
                 for region in self.point_list:
                     histdata = self.region_data[self.region_data['REGION_NUM']==region]
                     histdata = histdata['AF475W']
-                    self.make_hist(self.avhist_ax,self.plot_fig,histdata,region,0,max(self.data['AF475W']))
+                    self.make_hist(self.avhist_ax,self.avplot_fig,histdata,region,0,max(self.data['AF475W']))
                 
                 self.avhist_ax.set_title('Histogram of A(F475W) for selected regions')
+        
+        elif event.key == 'ctrl+1':
+            extent = self.cmd_ax.get_window_extent().transformed(self.cmdplot_fig.dpi_scale_trans.inverted())
+            self.plot_fig.savefig('awesomecmd.png', bbox_inches = extent)
+            print 'CMD saved '
+        
+        elif event.key == 'ctrl+2':
+            extent = self.ccd_ax.get_window_extent().transformed(self.ccdplot_fig.dpi_scale_trans.inverted())
+            self.plot_fig.savefig('awesomeccd.png', bbox_inches = extent)
+            print 'CCD saved '
+            
+        elif event.key == 'ctrl+3':
+            extent = self.zhist_ax.get_window_extent().transformed(self.zplot_fig.dpi_scale_trans.inverted())
+            self.plot_fig.savefig('awesomezhist.png', bbox_inches = extent)
+            print 'Metallicity histogram saved '   
+        
+        elif event.key == 'ctrl+4':
+            extent = self.avhist_ax.get_window_extent().transformed(self.avplot_fig.dpi_scale_trans.inverted())
+            self.plot_fig.savefig('awesomeavhist.png', bbox_inches = extent)
+            print 'Av Histogram saved '
         
         elif event.key == 'w':
             ##write out point list
@@ -462,7 +498,10 @@ class region_draw(object):
             self.ax.clear()
             self.draw_spatial()
             self.map_fig.canvas.draw()
-            self.plot_fig.canvas.draw()
+            self.zplot_fig.canvas.draw()
+            self.avplot_fig.canvas.draw()
+            self.ccdplot_fig.canvas.draw()
+            self.cmdplot_fig.canvas.draw()
             self.color_num = 0
             self.color_mod = 0
             self.line = None
@@ -497,20 +536,22 @@ class region_draw(object):
                         edgecolors = 'none',
                         c=self.data['Z'])
     
-    def make_cmd(self,ax,fig,magdata,colordata):
+    def make_cmd(self,ax,fig,magdata,colordata,z_data):
         ax.scatter(self.data['F336WF475W_VEGA'],self.data['F475W_VEGA']-24.4,edgecolors='none',c='gray')
-        ax.scatter(magdata,colordata,edgecolors='none',c=np.log10(self.region_arr['Z']/0.019))
+        ax = ax.scatter(magdata,colordata,edgecolors='none',c=z_data)
         ax.set_title('CMD of selected region(s)')
         ax.set_xlim(-2,0)
         ax.set_ylim(-6,0)
         ax.invert_yaxis()
         fig.canvas.draw()
-    def make_ccd(self,ax,fig,color1,color2):
+    def make_ccd(self,ax,fig,color1,color2,av_data):
         ax.scatter(self.data['F336WF475W_VEGA'],self.data['F475WF814W_VEGA'],edgecolors='none',c='gray')
-        ax.scatter(color1,color2,edgecolors='none',c=self.region_arr['AF475W'])
+        ax.scatter(color1,color2,edgecolors='none',c=av_data)
         ax.set_title('CCD of selected region(s)')
         ax.set_xlim(-2,0)
         ax.set_ylim(-1,2)
+        cb = fig.colorbar()
+        cb.set_clim(0,6)
         fig.canvas.draw()
     
     def make_hist(self,ax,fig,value,region_color,xmin,xmax):
@@ -553,19 +594,25 @@ class armplot(object):
         map_fig = plt.figure()
         ax = map_fig.add_subplot(111)
         
-        plot_fig = plt.figure()
-        cmd_ax = plot_fig.add_subplot(221)
-        ccd_ax = plot_fig.add_subplot(222)
-        avhist_ax = plot_fig.add_subplot(223)
-        zhist_ax = plot_fig.add_subplot(111)
+        zplot_fig = plt.figure()
+        cmdplot_fig = plt.figure()
+        ccdplot_fig = plt.figure()
+        avplot_fig = plt.figure()
+        cmd_ax = cmdplot_fig.add_subplot(111)
+        ccd_ax = ccdplot_fig.add_subplot(111)
+        avhist_ax = avplot_fig.add_subplot(111)
+        zhist_ax = zplot_fig.add_subplot(111)
         ax.set_title('')
-        cursor = region_draw(ax,map_fig,plot_fig,cmd_ax,
+        cursor = region_draw(ax,map_fig,zplot_fig,cmdplot_fig,ccdplot_fig,avplot_fig,cmd_ax,
                                                 ccd_ax,
                                                 avhist_ax,
                                                 zhist_ax,self.data)
         map_fig.canvas.mpl_connect('button_press_event', cursor.button_press_callback)
         map_fig.canvas.mpl_connect('key_release_event',cursor.key_press_callback)
-        plot_fig.canvas.mpl_connect('key_release_event',cursor.key_press_callback)
+        zplot_fig.canvas.mpl_connect('key_release_event',cursor.key_press_callback)
+        avplot_fig.canvas.mpl_connect('key_release_event',cursor.key_press_callback)
+        ccdplot_fig.canvas.mpl_connect('key_release_event',cursor.key_press_callback)
+        cmdplot_fig.canvas.mpl_connect('key_release_event',cursor.key_press_callback)
         plt.show()
 
 class SingleAgeSimulation(object):
