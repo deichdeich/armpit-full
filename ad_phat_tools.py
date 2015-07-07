@@ -14,10 +14,12 @@ import os.path
 import time
 import matplotlib.pyplot as plt
 import numpy.lib.recfunctions as rfn
+import pickle
 
 class armpit(object):
 
-    def __init__(self,data_path,iso_age,usefile = None):
+    def __init__(self,data_path,iso_age,extinct_col = None,
+    usefile = None,filenum = 0):
     
         # get isochrone and chop out the part we're interested in (the nondegenerate part)
         self.iso_age = iso_age
@@ -46,7 +48,7 @@ class armpit(object):
         
         
         self.data_path = data_path
-        
+        self.filenum = filenum
         # get the path of the fits file 
         
         ### TO DO: make it accept csv files   
@@ -55,7 +57,7 @@ class armpit(object):
         elif self.data_path.endswith('.fits'):
             self.raw_file = self.data_path
         else:
-            raise IOError('Data input must either be a fits file with containing the relevant columns or a simulation object.')
+            raise IOError('Data input must either be a fits file containing the relevant columns or a simulation object.')
         
         self.raw_fits = fits.open(self.raw_file)
         
@@ -85,9 +87,10 @@ class armpit(object):
         self.day = time.strftime('%d')
         self.usefile = usefile
         if self.usefile == None:
-            self.filename = 'armpit_out/armpit_out_{}myr_{}_{}.csv'.format(self.iso_age,
-                                                                       self.month,
-                                                                       self.day)
+            self.filename = 'multi_age_analysis/armpit_out_beastav_{}_{}_{}_{}.csv'.format(self.iso_age,
+                                                                                        self.month,
+                                                                                        self.day,
+                                                                                        self.filenum)
         else:
             self.filename = self.usefile
         
@@ -190,6 +193,17 @@ class armpit(object):
 
         return (new336475,new475814,intrinsic_475,a475)
     
+    #If you want to de-extinct the star with some other av included in the input file
+    def subtract_av(self,star,avcol):
+        av = star[avcol]
+        intrinsic_475 = star['F475W_VEGA'] - 24.4 - av
+        dx = av*self.E336m475
+        dy = av*self.E475m814
+        
+        new336475 = (star['F336W_VEGA']-star['F475W_VEGA'])-dx
+        new475814 = (star['F475W_VEGA']-star['F814W_VEGA'])-dy
+
+        return(new336475,new475814,intrinsic_475,av)        
 
     def metal_fit(self,data_color,data_mag):
         z = self.metal_interp_function(data_color,data_mag)
@@ -220,7 +234,10 @@ class armpit(object):
             
         with open(self.filename, 'ab') as outfile:
             for star in self.raw_data[:limit]:
-                new336475, new475814, new475, a475 = self.phart(star)
+                if self.extinct_col = None:
+                    new336475, new475814, new475, a475 = self.phart(star)
+                else:
+                    new336475, new475814, new475, a475 = self.subtract_av(star,self.extinct_col)
                 new336 = new336475 + new475
                 new814 = (-1*new475814) - new475
                  
@@ -248,11 +265,11 @@ class armpit(object):
                             star['F336W_VEGA']-star['F475W_VEGA'],
                             star['F475W_VEGA']-star['F814W_VEGA'],
                             star['F475W_VEGA'],
-                            new336475[0],
-                            new475814[0],
-                            new475[0],
-                            a475[0],
-                            z[0])
+                            new336475,
+                            new475814,
+                            new475,
+                            a475,
+                            z)
                 outfile.write('{}\n'.format(','.join(map(str,(data)))))
                 n += 1
                 sys.stdout.write('\rDoing line {}, {}% done'.format(n,(n/data_length)*100))
@@ -269,25 +286,35 @@ class data_plot(object):
 ###  and figure out why the cmd is wonky
 ###  and make all plots look final
 
-    def __init__(self,ax, map_fig, plot_fig, cmd_ax, ccd_ax, avhist_ax, zhist_ax, data):
+    def __init__(self,
+                    ax,
+                    map_fig, 
+                    plot_fig,
+                    #cmd_ax,
+                    #ccd_ax,
+                    #avhist_ax,
+                    zhist_ax,
+                    data,
+                    point_list = {}):
         self.previous_point = []
         self.start_point = []
         self.end_point = []
         self.line = None    
-        self.point_list = {}
+        self.point_list = point_list
         self.map_fig = map_fig
         self.map_fig.canvas.draw()
         self.data = data
         self.plot_fig = plot_fig
         self.plot_fig.canvas.draw()
-        self.cmd_ax = cmd_ax
-        self.ccd_ax = ccd_ax
-        self.avhist_ax = avhist_ax
+        #self.cmd_ax = cmd_ax
+        #self.ccd_ax = ccd_ax
+        #self.avhist_ax = avhist_ax
         self.zhist_ax = zhist_ax
         self.ax = ax
         self.star_arr = np.zeros((len(self.data),1),dtype=[('REGION_NUM',int)])
         self.star_arr['REGION_NUM'] += 999
         self.region_arr = rfn.merge_arrays([self.data,self.star_arr],flatten = True)
+        self.region_arr = np.ma.masked_array(self.region_arr,np.isnan(self.region_arr['Z']))
         
         self.region_counter = 0
         
@@ -362,16 +389,16 @@ class data_plot(object):
         if event.key == '1':
             if self.point_list == {}:
                 color_data = self.data['F336WF475W_VEGA']
-                mag_data = self.data['F475W_VEGA']
+                mag_data = self.data['F475W_VEGA']-24.4
             else:
                 self.set_data()
                 color_data = self.region_data['F336WF475W_VEGA']
-                mag_data = self.region_data['F475W_VEGA']
+                mag_data = self.region_data['F475W_VEGA']-24.4
             
             self.make_cmd(self.cmd_ax,
                           self.plot_fig,
                           color_data,
-                          mag_data-24.4)
+                          mag_data)
         
         elif event.key == 'ctrl+1':
             extent = self.cmd_ax.get_window_extent().transformed(self.plot_fig.dpi_scale_trans.inverted())
@@ -407,17 +434,23 @@ class data_plot(object):
         
         elif event.key == '4':
             if self.point_list == {}:
-                avdata = self.data['A(F475W)']
-                self.make_hist(self.avhist_ax,self.plot_fig,histdata,1,0,3.5)
+                histdata = self.data['AF475W']
+                self.make_hist(self.avhist_ax,self.plot_fig,histdata,1,0,max(self.data['AF475W']))
             else:
                 self.set_data()
                 for region in self.point_list:
                     histdata = self.region_data[self.region_data['REGION_NUM']==region]
                     histdata = histdata['AF475W']
-                    self.make_hist(self.avhist_ax,self.plot_fig,histdata,region,0,3.5)
+                    self.make_hist(self.avhist_ax,self.plot_fig,histdata,region,0,max(self.data['AF475W']))
                 
                 self.avhist_ax.set_title('Histogram of A(F475W) for selected regions')
-            
+        
+        elif event.key == 'w':
+            ##write out point list
+            month = time.strftime('%m')
+            day = time.strftime('%d')
+            pickle.dump(self.point_list,open('skyselect_regions_{}_{}.p'.format(month,day),'wb'))
+        
         elif event.key == 'c':
             self.region_counter = 0
             self.point_list = {}
@@ -464,14 +497,16 @@ class data_plot(object):
                         c=self.data['Z'])
     
     def make_cmd(self,ax,fig,magdata,colordata):
-        ax.scatter(colordata,magdata,edgecolors='none',c='black')
+        ax.scatter(self.data['F336WF475W_VEGA'],self.data['F475W_VEGA']-24.4,edgecolors='none',c='gray')
+        ax.scatter(magdata,colordata,edgecolors='none',c=np.log10(self.region_arr['Z']/0.019))
         ax.set_title('CMD of selected region(s)')
         ax.set_xlim(-2,0)
         ax.set_ylim(-6,0)
         ax.invert_yaxis()
         fig.canvas.draw()
     def make_ccd(self,ax,fig,color1,color2):
-        ax.scatter(color1,color2,edgecolors='none',c='black')
+        ax.scatter(self.data['F336WF475W_VEGA'],self.data['F475WF814W_VEGA'],edgecolors='none',c='gray')
+        ax.scatter(color1,color2,edgecolors='none',c=self.region_arr['AF475W'])
         ax.set_title('CCD of selected region(s)')
         ax.set_xlim(-2,0)
         ax.set_ylim(-1,2)
@@ -505,11 +540,6 @@ class data_plot(object):
             p1x,p1y = p2x,p2y
         return inside
 
-
-# TO DO:
-# if there has been no region defined, then make plots of the whole data.
-# also: make histogram methods (which will also necessitate the dictionarizing of
-# the regions), and make all plotting methods make full-quality plots
 class armplot(object):
     def __init__(self,data_object):
         print '\n loading {}... \n'.format(data_object.filename)
@@ -523,18 +553,21 @@ class armplot(object):
         ax = map_fig.add_subplot(111)
         
         plot_fig = plt.figure()
-        cmd_ax = plot_fig.add_subplot(221)
-        ccd_ax = plot_fig.add_subplot(222)
-        avhist_ax = plot_fig.add_subplot(223)
-        zhist_ax = plot_fig.add_subplot(224)
+        #cmd_ax = plot_fig.add_subplot(221)
+        #ccd_ax = plot_fig.add_subplot(222)
+        #avhist_ax = plot_fig.add_subplot(223)
+        zhist_ax = plot_fig.add_subplot(111)
         ax.set_title('')
-        cursor = data_plot(ax,map_fig,plot_fig,cmd_ax,ccd_ax,avhist_ax,zhist_ax,self.data)
+        cursor = data_plot(ax,map_fig,plot_fig,#cmd_ax,
+                                                #ccd_ax,
+                                                #avhist_ax,
+                                                zhist_ax,self.data)
         map_fig.canvas.mpl_connect('button_press_event', cursor.button_press_callback)
         map_fig.canvas.mpl_connect('key_release_event',cursor.key_press_callback)
         plot_fig.canvas.mpl_connect('key_release_event',cursor.key_press_callback)
         plt.show()
 
-class simulation(object):
+class SingleAgeSimulation(object):
     def __init__(self,numstars,sim_age):
         self.sim_age = sim_age
         self.iso_path = 'isochrones/{}Myr_finez.fits'.format(self.sim_age)
@@ -587,7 +620,7 @@ class simulation(object):
 
         redvecs = {'w336f475':[0.446], 'f475f814':[0.61]}
         
-        new_f475 = naked_f475-av_range
+        new_f475 = naked_f475+av_range
         dx = av_range*(redvecs['w336f475'])
         dy = av_range*(redvecs['f475f814'])
         new_w336f475 = naked_w336f475+dx
@@ -635,3 +668,78 @@ class simulation(object):
         hdulist = fits.HDUList([prihdu,simulation_data])
         
         hdulist.writeto(self.output_file,clobber=True)
+
+class ArtificialInterpolatedMagnitudes(object):
+    def __init__(self):
+        self.interp_dict = {}
+        self.iso_dir = 'shitload_of_isochrones'
+        self.filters = ['F336W','F475W','F814W']
+    
+    def __call__(self,age,mass,z_val,av,solar_norm = False):
+        self.mass = mass
+        self.age = float(age)
+        self.z_val = z_val
+        self.av = av
+        self.age_gap = self.get_age_gap()
+        self.solar_norm = solar_norm
+        self.iso_names = {'upper':'{}/{}Myr_finez.fits'.format(self.iso_dir,self.age_gap[0]),
+                          'lower':'{}/{}Myr_finez.fits'.format(self.iso_dir,self.age_gap[1])}
+       
+        self.a336 = self.av*1.667
+        self.a475 = self.av*1.219
+        self.a814 = self.av*0.61
+        
+        
+        mags = self.simulate()
+        print 'Magnitude in F336W: {}\nMagnitude in F475W: {}\nMagnitude in F814W: {}'.format(mags[0],mags[1],mags[2])
+    
+    def get_age_gap(self):
+        rounded_age = round(self.age)
+        if rounded_age > self.age:
+            return (rounded_age-1,rounded_age)
+        elif rounded_age < self.age:
+            return (rounded_age,rounded_age+1)
+        else:
+            return (self.age,self.age)
+        
+    def simulate(self):
+        if self.iso_names['upper'] not in self.interp_dict:
+            self.interpolate(self.iso_names['upper'])
+        elif self.iso_names['upper'] in self.interp_dict:
+            pass
+        
+        if self.iso_names['lower'] not in self.interp_dict:
+            self.interpolate(self.iso_names['lower'])
+        elif self.iso_names['lower'] in self.interp_dict:
+            pass
+        
+        uf336w_sim,uf475w_sim,uf814w_sim = [self.interp_dict[self.iso_names['upper']][filt](self.mass,self.z_val) for filt in self.filters]
+        lf336w_sim,lf475w_sim,lf814w_sim = [self.interp_dict[self.iso_names['lower']][filt](self.mass,self.z_val) for filt in self.filters]
+        
+        upper_weight = abs(self.age_gap[1]-self.age)
+        lower_weight = abs(self.age_gap[0]-self.age)
+        if upper_weight == lower_weight == 0:
+            upper_weight = lower_weight = 0.5
+        
+        
+        f336w_sim = (upper_weight*uf336w_sim)+(lower_weight*lf336w_sim)+self.a336
+        f475w_sim = (upper_weight*uf475w_sim)+(lower_weight*lf475w_sim)+self.a475
+        f814w_sim = (upper_weight*uf814w_sim)+(lower_weight*lf814w_sim)+self.a814
+        
+        return f336w_sim,f475w_sim,f814w_sim
+    
+    def interpolate(self,iso_file):
+        isochrone = fits.open(iso_file)[1].data
+        mass = isochrone['M_ini'].copy()
+        if self.solar_norm == False:
+            metals = isochrone['Z'].copy()
+        elif self.solar_norm == True:
+            metals = isochrone['Z'].copy()
+            metals = np.log10(metals/0.019)
+
+        points = zip(mass,metals)
+        filt_dict = {}
+        for filt in self.filters:
+            filt_dict[filt] = interp.LinearNDInterpolator(points,isochrone[filt].copy())
+        
+        self.interp_dict[iso_file] = filt_dict
