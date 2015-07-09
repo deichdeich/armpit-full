@@ -304,7 +304,10 @@ class region_draw(object):
         self.start_point = []
         self.end_point = []
         self.line = None    
-        self.point_list = point_list
+        if point_list == {}:
+            self.point_list = point_list
+        else:
+            self.point_list = pickle.load(open(point_list,'rb'))
         self.map_fig = map_fig
         self.map_fig.canvas.draw()
         self.map_fig.canvas.set_window_title('Spatial Map')
@@ -337,8 +340,6 @@ class region_draw(object):
         
         self.region_data = 0
         self.region_check = False
-    def __call__(self):
-        self.point_list = {}
     def button_press_callback(self, event):
         if event.inaxes:
         #if there is no previous_point, create a new key in the point_list dictionary.
@@ -615,7 +616,18 @@ class armplot(object):
         cmdplot_fig.canvas.mpl_connect('key_release_event',cursor.key_press_callback)
         plt.show()
 
-class SingleAgeSimulation(object):
+class simulation(object):
+
+    # Integrating dN/dM ~ M^(-2.35) to get masses of a population
+    def masslist(self,numstars):
+        population = np.random.random(numstars)
+        intconst = 1.35
+        normconst = 1.3527
+        masses = (intconst/normconst)*(population**(1/(-intconst)))
+        return masses
+
+# this was really to test to see if my extinction code was working
+class SingleAgeSimulation(simulation):
     def __init__(self,numstars,sim_age):
         self.sim_age = sim_age
         self.iso_path = 'isochrones/{}Myr_finez.fits'.format(self.sim_age)
@@ -640,15 +652,6 @@ class SingleAgeSimulation(object):
         
         self.write_data()       
  
-    # Integrating dN/dM ~ M^(-2.35) to get masses of a population
-    def masslist(self,numstars):
-        population = np.random.random(numstars)
-        intconst = 1.35
-        normconst = 1.3527
-        masses = (intconst/normconst)*(population**(1/(-intconst)))
-        masses = masses[masses <= 50]
-        return masses
-    
     
     def interp(self,field):
         intp_function = interpolate.interp1d(self.isochrones['M_INI'],
@@ -717,7 +720,10 @@ class SingleAgeSimulation(object):
         
         hdulist.writeto(self.output_file,clobber=True)
 
-class ArtificialInterpolatedMagnitudes(object):
+# to do: make it grab the two closest isochrones, not just rounding to
+# the nearest integer, so that you can have any range of isochrones in
+# the directory.
+class ArtificialInterpolatedMagnitudes(simulation):
     def __init__(self):
         self.interp_dict = {}
         self.iso_dir = 'shitload_of_isochrones'
@@ -739,7 +745,8 @@ class ArtificialInterpolatedMagnitudes(object):
         
         
         mags = self.simulate()
-        print 'Magnitude in F336W: {}\nMagnitude in F475W: {}\nMagnitude in F814W: {}'.format(mags[0],mags[1],mags[2])
+        return mags
+        #print 'Magnitude in F336W: {}\nMagnitude in F475W: {}\nMagnitude in F814W: {}'.format(mags[0],mags[1],mags[2])
     
     def get_age_gap(self):
         rounded_age = round(self.age)
@@ -788,6 +795,6 @@ class ArtificialInterpolatedMagnitudes(object):
         points = zip(mass,metals)
         filt_dict = {}
         for filt in self.filters:
-            filt_dict[filt] = interp.LinearNDInterpolator(points,isochrone[filt].copy())
+            filt_dict[filt] = interpolate.LinearNDInterpolator(points,isochrone[filt].copy())
         
         self.interp_dict[iso_file] = filt_dict
