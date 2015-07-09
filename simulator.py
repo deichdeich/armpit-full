@@ -19,7 +19,6 @@ f336w_arr = np.zeros(len(masses))
 f475w_arr = np.zeros(len(masses))
 f814w_arr = np.zeros(len(masses))
 
-## first sim: all solar metallicity, single 4myr age, vary masses
 counter = 0
 for starmass in masses:
 
@@ -53,18 +52,3 @@ prihdr['SIM_AGE'] = simage
 prihdu = fits.PrimaryHDU(header=prihdr)
 hdulist = fits.HDUList([prihdu,sim_data])
 hdulist.writeto('many_age_{}Myr.fits'.format(simage),clobber=True)
-
-## second sim:  all solar metallicity, single 30myr age, vary masses
-
-
-
-
-## third sim:  all solar metallicity, vary age, vary masses
-
-
-
-
-
-
-
-## fourth sim: vary metallicity, vary age, vary masses
