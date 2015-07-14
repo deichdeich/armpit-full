@@ -16,6 +16,7 @@ import time
 import matplotlib.pyplot as plt
 import numpy.lib.recfunctions as rfn
 import pickle
+import sys
 
 class armpit(object):
 
@@ -69,10 +70,10 @@ class armpit(object):
         # that's not just an object.
         if 'IS_SIM' in self.data_header:
             self.is_sim = self.data_header['IS_SIM']
-            self.sim_age = self.data_header['SIM_AGE']
+            self.sim_params = self.data_header['FREE_PARAMS']
         else:
             self.is_sim = False
-            self.sim_age = np.nan
+            self.sim_params = np.nan
         
         # trim the data
         self.raw_data = self.raw_fits[1].data
@@ -212,7 +213,7 @@ class armpit(object):
 
 
     def csv_header(self):
-        csvcomments = '# Simulation: {}\n'.format(self.is_sim)+'# Simulated population age: {}\n'.format(self.sim_age)+'# Fitted Age: {}\n'.format(self.iso_age)
+        csvcomments = '# Simulation: {}\n'.format(self.is_sim)+'# Free parameters in simulation: {}\n'.format(self.sim_params)+'# Fitted Age: {}\n'.format(self.iso_age)
         if self.is_sim == True:
             csvhdr = csvcomments+'RA,DEC,MASS,F336W_NAKED-F475W_NAKED,F475W_NAKED-F814W_NAKED,F475W_NAKED,F336W-F475W_VEGA,F475W-F814W_VEGA,F475W_VEGA,F336W-F475W,F475W-F814W,F475W,A(F475W)_IN,A(F475W),A(F475W)_DIFF,Z\n'
             
@@ -227,7 +228,7 @@ class armpit(object):
         else:
             limit = lim
         
-        import sys
+     
         n = 0
         data_length = limit+0.0
         with open(self.filename, 'wb') as outfile:
@@ -273,7 +274,7 @@ class armpit(object):
                             z)
                 outfile.write('{}\n'.format(','.join(map(str,(data)))))
                 n += 1
-                sys.stdout.write('\rDoing line {}, {}% done'.format(n,(n/data_length)*100))
+                sys.stdout.write('\rDoing line {}, {}% done     '.format(n,(n/data_length)*100))
                 sys.stdout.flush()
         if draw_plots == True:
             self.make_plot('cmd')
@@ -626,100 +627,6 @@ class simulation(object):
         masses = (intconst/normconst)*(population**(1/(-intconst)))
         return masses
 
-# this was really to test to see if my extinction code was working
-class SingleAgeSimulation(simulation):
-    def __init__(self,numstars,sim_age):
-        self.sim_age = sim_age
-        self.iso_path = 'isochrones/{}Myr_finez.fits'.format(self.sim_age)
-        self.isochrones = fits.open(self.iso_path)
-        self.isochrones = self.isochrones[1].data
-        self.isochrones = [self.isochrones[np.where(np.logical_and(self.isochrones["M_ini"]<10,
-                                                                   self.isochrones["M_ini"]>2))]][0]
-        self.iso_colors = np.rec.array([(self.isochrones["W336MAG"]-self.isochrones["F475MAG"]),
-                                        (self.isochrones["F475MAG"]-self.isochrones["F814MAG"])],
-                                        names=("Iso(336-475)","Iso(475-814)"))
-                                        
-        self.iso_color_x = sorted(self.iso_colors["Iso(336-475)"])
-        self.iso_color_y = sorted(self.iso_colors["Iso(475-814)"])
-        self.numstars = numstars
-        self.mass_distribution = self.masslist(numstars)      
-        
-        self.month = time.strftime('%m')
-        self.day = time.strftime('%d')
-        self.output_file = 'sim_pops/sim_out_{}myr_{}_{}.fits'.format(self.sim_age,
-                                                                   self.month,
-                                                                   self.day)
-        
-        self.write_data()       
- 
-    
-    def interp(self,field):
-        intp_function = interpolate.interp1d(self.isochrones['M_INI'],
-                                      self.isochrones['{}'.format(field)],
-                                      bounds_error = False)
-        return intp_function
-    
-    # adds a grid of Av
-    def add_av(self):
-        naked_w336 = self.interp('W336MAG')(self.mass_distribution)
-        naked_f475 = self.interp('F475MAG')(self.mass_distribution)
-        naked_f814 = self.interp('F814MAG')(self.mass_distribution)
-        naked_w336f475 = naked_w336 - naked_f475
-        naked_f475f814 = naked_f475 - naked_f814
-        
-        av_range = (3.5)*np.random.random(len(naked_f475))
-
-        redvecs = {'w336f475':[0.446], 'f475f814':[0.61]}
-        
-        new_f475 = naked_f475+av_range
-        dx = av_range*(redvecs['w336f475'])
-        dy = av_range*(redvecs['f475f814'])
-        new_w336f475 = naked_w336f475+dx
-        new_f475f814 = naked_f475f814+dy
-        
-        new_w336 = new_w336f475 + new_f475
-        new_f814 = -1 * (new_f475f814 - new_f475) 
-        
-        
-        #ra, dec are dummy counters.  it's helpful for keeping track of individual stars
-        #later and it makes it fit into the format that armpit expects.
-        ra = np.linspace(1,len(naked_f475),len(naked_f475))
-        dec = ra
-        
-        #armpit expects there to be an error column, so I use the following for all three.
-        dummy = np.zeros(len(naked_f475))
-        
-        #I don't know how to prepare these columns for a FITS table file nicely,
-        #so this is how it's going for now
-        
-        sim_data = fits.BinTableHDU.from_columns(
-            [fits.Column(name='RA',format='E',array = ra),
-             fits.Column(name='DEC',format = 'E',array = dec),
-             fits.Column(name='MASS',format = 'E',array = self.mass_distribution),
-             fits.Column(name='F336W_NAKED',format = 'E',array = naked_w336),
-             fits.Column(name='F475W_NAKED',format = 'E',array = naked_f475),
-             fits.Column(name='F814W_NAKED',format = 'E',array = naked_f814),
-             fits.Column(name='F336W_VEGA',format = 'E',array = new_w336),
-             fits.Column(name='F475W_VEGA',format = 'E',array = new_f475),
-             fits.Column(name='F814W_VEGA',format = 'E',array = new_f814),
-             fits.Column(name='AF475W_IN',format = 'E',array = av_range),
-             fits.Column(name='F336W_ERR',format = 'E',array = dummy),
-             fits.Column(name='F475W_ERR',format = 'E',array = dummy),
-             fits.Column(name='F814W_ERR',format = 'E',array = dummy)])
-        
-        return sim_data
-    
-    def write_data(self):
-        simulation_data = self.add_av()
-        prihdr = fits.Header()
-        prihdr['IS_SIM'] = True
-        prihdr['SIM_AGE'] = self.sim_age
-        prihdu = fits.PrimaryHDU(header=prihdr)
-        
-        hdulist = fits.HDUList([prihdu,simulation_data])
-        
-        hdulist.writeto(self.output_file,clobber=True)
-
 # to do: make it grab the two closest isochrones, not just rounding to
 # the nearest integer, so that you can have any range of isochrones in
 # the directory.
@@ -729,19 +636,15 @@ class ArtificialInterpolatedMagnitudes(simulation):
         self.iso_dir = 'shitload_of_isochrones'
         self.filters = ['F336W','F475W','F814W']
     
-    def __call__(self,age,mass,z_val,av,solar_norm = False):
+    def __call__(self,age,mass,z_val,solar_norm = False):
         self.mass = mass
         self.age = float(age)
         self.z_val = z_val
-        self.av = av
         self.age_gap = self.get_age_gap()
         self.solar_norm = solar_norm
         self.iso_names = {'upper':'{}/{}Myr_finez.fits'.format(self.iso_dir,self.age_gap[0]),
                           'lower':'{}/{}Myr_finez.fits'.format(self.iso_dir,self.age_gap[1])}
-       
-        self.a336 = self.av*1.667
-        self.a475 = self.av*1.219
-        self.a814 = self.av*0.61
+
         
         
         mags = self.simulate()
@@ -777,9 +680,9 @@ class ArtificialInterpolatedMagnitudes(simulation):
             upper_weight = lower_weight = 0.5
         
         
-        f336w_sim = (upper_weight*uf336w_sim)+(lower_weight*lf336w_sim)+self.a336
-        f475w_sim = (upper_weight*uf475w_sim)+(lower_weight*lf475w_sim)+self.a475
-        f814w_sim = (upper_weight*uf814w_sim)+(lower_weight*lf814w_sim)+self.a814
+        f336w_sim = (upper_weight*uf336w_sim)+(lower_weight*lf336w_sim)
+        f475w_sim = (upper_weight*uf475w_sim)+(lower_weight*lf475w_sim)
+        f814w_sim = (upper_weight*uf814w_sim)+(lower_weight*lf814w_sim)
         
         return f336w_sim,f475w_sim,f814w_sim
     
@@ -798,3 +701,205 @@ class ArtificialInterpolatedMagnitudes(simulation):
             filt_dict[filt] = interpolate.LinearNDInterpolator(points,isochrone[filt].copy())
         
         self.interp_dict[iso_file] = filt_dict
+        
+class simulator(simulation):
+    def __init__(self,numstars,ages='all',z_values='all',masses='all',av='none'):
+        self.numstars = numstars
+        self.z_values = z_values
+        self.masses = masses
+        self.av = av
+        self.ages = ages
+        self.month = time.strftime('%m')
+        self.day = time.strftime('%d')
+        self.output_file = 'sim_pops/sim_out_{}_{}_{}.fits'.format(self.numstars,
+                                                                self.month,
+                                                                self.day)
+        
+        self.simstar = ArtificialInterpolatedMagnitudes()
+        
+        self.free_parameters = []
+        
+        if numstars == '':
+            if len(ages) == len(z_values) == len(masses):
+                numstars = len(ages)
+        
+            else:
+                raise ValueError('All input parameters must have the same length')
+        
+        if self.ages == 'all':
+            self.free_parameters.append('ages')
+            #self.age_list = (100-4)*np.random.random(self.numstars)-4
+        else:
+            try:
+                if len(ages) == self.numstars:
+                    self.age_list = ages
+                elif len(ages) == 1:
+                    self.age_list = np.zeros(self.numstars)+age[0]
+                elif len(ages) != self.numstars or len(self.ages) != 1:
+                    raise ValueError('Age array must equal number of stars or 1.')
+                elif max(ages) > 100 or min(ages) < 4:
+                    raise ValueError('Maximum allowed age: 100Myr, minimum allowed age: 4Myr')
+            except TypeError:
+                self.age_list = np.zeros(self.numstars)+ages
+        
+        if self.z_values == 'all':
+            self.free_parameters.append('z')
+            #self.z_list = (0.03-0.0001)*np.random.random(self.numstars)-0.0001
+        else:
+            try:
+                if len(z_values) == self.numstars:
+                    self.z_list = z_values
+                elif len(z_values) == 1:
+                    self.z_list = np.zeros(self.numstars)+self.z_values[0]
+                elif len(z_values) != self.numstars or len(self.z_values) != 1:
+                    raise ValueError('Z array must equal number of stars or 1.')
+                elif max(z_values) > 0.03 or min(self.z_values) < 0.0001:
+                    raise ValueError('Maximum allowed Z: 0.03, minimum allowed Z: 0.0001')
+            except TypeError:
+                self.z_list = np.zeros(numstars)+z_values
+        
+        if self.masses == 'all':
+            self.free_parameters.append('masses')
+            #self.mass_list = masslist(numstars)
+        else:
+            try:
+                if len(masses) == numstars:
+                    self.mass_list = masses
+                elif len(masses) == 1:
+                    self.mass_list = np.zeros(numstars)+mass[0]
+                elif len(masses) != numstars or len(masses) != 1:
+                    raise ValueError('Mass array must equal number of stars or 1.')
+            except TypeError:
+                self.mass_list = np.zeros(numstars)+masses
+        
+        if self.av == 'none':
+            self.av_list = np.zeros(self.numstars)
+        elif self.av == 'grid':
+            self.av_list = (3.5)*np.random.random(len(naked_f475))
+        else:
+            try:
+                if len(av) == numstars:
+                    self.av_list = av
+                elif len(av) == 1:
+                    self.av_list = np.zeros(numstars)+av[0]
+                elif len(av) != numstars or len(av) != 1:
+                    raise ValueError('Av array must equal number of stars or 1.')
+            except TypeError:
+                self.av_list = np.zeros(numstars)+av
+
+        #initialize all the arrays
+        self.ra_arr = np.zeros(self.numstars)
+        self.dec_arr = np.zeros(self.numstars)
+        self.mass_arr = np.zeros(self.numstars)
+        self.age_arr = np.zeros(self.numstars)
+        self.z_arr = np.zeros(self.numstars)
+        self.f336w_naked_arr = np.zeros(self.numstars)
+        self.f475w_naked_arr = np.zeros(self.numstars)
+        self.f814w_naked_arr = np.zeros(self.numstars)
+        self.av_arr = np.zeros(self.numstars)
+        self.f336w_arr = np.zeros(self.numstars)
+        self.f475w_arr = np.zeros(self.numstars)
+        self.f814w_arr = np.zeros(self.numstars)
+        self.dummy_arr = np.zeros(self.numstars)
+    
+        self.simulate()
+        print '\ndone with simulation, writing FITS...'
+        self.write_to_file()
+        print '\nFITS file {} written'.format(self.output_file)
+    
+    def simulate(self):
+        for starnum in xrange(self.numstars):
+            perc_done = round(25*(starnum/float(self.numstars)))
+            progress_bar = '=' * int(perc_done+1)
+            sys.stdout.write('\rSimulating... |{}{}| {}%'.format(progress_bar,
+                                                                 ' '*(25-int(perc_done+1)),
+                                                                    round(100*((starnum+1)/float(self.numstars)),2)))
+            sys.stdout.flush()
+            self.age,self.mass,self.z,self.av = self.get_params(starnum)
+            self.star = [0,0,0]
+            
+            if self.free_parameters != []:
+                while (self.star[0]-self.star[1]>-0.5 or np.isnan(self.star[0])
+                        or np.isnan(self.star[1]) or np.isnan(self.star[2])): 
+                    self.age,self.mass,self.z,self.av = self.get_params(starnum)
+                    self.star = self.simstar(self.age,self.mass,self.z,self.av)
+            elif self.free_parameters == []:
+                self.star = self.simstar(self.age,self.mass,self.z,self.av)
+            
+            self.mass_arr[starnum] = self.mass
+            self.age_arr[starnum] = self.age
+            
+            self.ra_arr[starnum] = self.dec_arr[starnum] = starnum
+            
+            self.f336w = self.star[0]
+            self.f475w = self.star[1]
+            self.f814w = self.star[2]
+            
+            self.f336w_naked_arr[starnum] = self.f336w
+            self.f475w_naked_arr[starnum] = self.f475w
+            self.f814w_naked_arr[starnum] = self.f814w
+            
+            self.a336 = self.av*1.667
+            self.a475 = self.av*1.219
+            self.a814 = self.av*0.61
+            
+            self.av_arr[starnum] = self.av
+            
+            # add av
+            self.f336w += self.a336
+            self.f475w += self.a475
+            self.f814w += self.a814
+            
+            self.f336w_arr[starnum] = self.f336w
+            self.f475w_arr[starnum] = self.f475w
+            self.f814w_arr[starnum] = self.f814w
+            self.z_arr[starnum] = self.z
+    
+    def get_params(self,starnum):
+        if 'ages' in self.free_parameters:
+            self.star_age = (100-4)*np.random.random(1)+4
+        elif 'ages' not in self.free_parameters:
+            self.star_age = self.ages[starnum]
+        
+        if 'masses' in self.free_parameters:
+            self.star_mass = self.masslist(1)
+        elif 'masses' not in self.free_parameters:
+            self.star_mass = self.mass_list[starnum]
+            
+        if 'z' in self.free_parameters:
+            self.z_val = (0.03-0.0001)*np.random.random(1)+0.0001
+        elif 'z' not in self.free_parameters:
+            self.z_val = self.z_list[starnum] 
+        
+        self.star_av = self.av_list[starnum]  
+    
+        return self.star_age,self.star_mass,self.z_val,self.star_av
+    
+    
+    def get_fits_data(self):
+        sim_data = fits.BinTableHDU.from_columns(
+            [fits.Column(name='RA',format='E',array = self.ra_arr),
+             fits.Column(name='DEC',format = 'E',array = self.dec_arr),
+             fits.Column(name='AGE',format='E',array = self.age_arr),
+             fits.Column(name='MASS',format = 'E',array = self.mass_arr),
+             fits.Column(name='Z',format = 'E',array = self.z_arr),
+             fits.Column(name='F336W_NAKED',format = 'E',array = self.f336w_naked_arr),
+             fits.Column(name='F475W_NAKED',format = 'E',array = self.f475w_naked_arr),
+             fits.Column(name='F814W_NAKED',format = 'E',array = self.f814w_naked_arr),
+             fits.Column(name='F336W_VEGA',format = 'E',array = self.f336w_arr),
+             fits.Column(name='F475W_VEGA',format = 'E',array = self.f475w_arr),
+             fits.Column(name='F814W_VEGA',format = 'E',array = self.f814w_arr),
+             fits.Column(name='AF475W_IN',format = 'E',array = self.av_arr),
+             fits.Column(name='F336W_ERR',format = 'E',array = self.dummy_arr),
+             fits.Column(name='F475W_ERR',format = 'E',array = self.dummy_arr),
+             fits.Column(name='F814W_ERR',format = 'E',array = self.dummy_arr)])
+        return sim_data
+    
+    def write_to_file(self):
+        sim_data = self.get_fits_data()
+        prihdr = fits.Header()
+        prihdr['IS_SIM'] = True
+        prihdr['FREEPRMS'] = ','.join(self.free_parameters)
+        prihdu = fits.PrimaryHDU(header=prihdr)
+        hdulist = fits.HDUList([prihdu,sim_data])
+        hdulist.writeto(self.output_file,clobber=True)
