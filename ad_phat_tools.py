@@ -17,11 +17,12 @@ import matplotlib.pyplot as plt
 import numpy.lib.recfunctions as rfn
 import pickle
 import sys
+from multiprocessing import Pool
 
 class armpit(object):
 
     def __init__(self,data_path,iso_age,extinct_col = None,
-    usefile = None,filenum = 0):
+    usefile = None,rv = 3.1,filenum = 0,comments = ''):
     
         # get isochrone and chop out the part we're interested in (the nondegenerate part)
         self.iso_age = iso_age
@@ -51,10 +52,12 @@ class armpit(object):
         
         self.data_path = data_path
         self.filenum = filenum
+        self.extinct_col = extinct_col
+
         # get the path of the fits file 
-        
+        print type(self.data_path)
         ### TO DO: make it accept csv files   
-        if type(self.data_path) is SingleAgeSimulation:
+        if type(self.data_path) is StellarPopulationSimulator:
             self.raw_file = self.data_path.output_file
         elif self.data_path.endswith('.fits'):
             self.raw_file = self.data_path
@@ -70,7 +73,7 @@ class armpit(object):
         # that's not just an object.
         if 'IS_SIM' in self.data_header:
             self.is_sim = self.data_header['IS_SIM']
-            self.sim_params = self.data_header['FREE_PARAMS']
+            self.sim_params = self.data_header['FREEPRMS']
         else:
             self.is_sim = False
             self.sim_params = np.nan
@@ -88,8 +91,11 @@ class armpit(object):
         self.month = time.strftime('%m')
         self.day = time.strftime('%d')
         self.usefile = usefile
+        self.comments = comments
+        self.Rv = rv
+        self.E336m475,self.E475m814 = self.redvec(self.Rv)
         if self.usefile == None:
-            self.filename = 'multi_age_analysis/armpit_out_beastav_{}_{}_{}_{}.csv'.format(self.iso_age,
+            self.filename = 'multi_age_analysis/armpit_out_{}_{}_{}_{}.csv'.format(self.iso_age,
                                                                                         self.month,
                                                                                         self.day,
                                                                                         self.filenum)
@@ -103,13 +109,13 @@ class armpit(object):
     '''
     def load_data(self,*cols):
         filename = self.data()
-        data_cols = np.genfromtxt(filename,names=True,delimiter=',',skip_header=3).dtype.names
+        data_cols = np.genfromtxt(filename,names=True,delimiter=',',skip_header = 4).dtype.names
         if cols == ():
             req_cols = data_cols
         else:
             req_cols = cols
         
-        data_file_len = len(np.genfromtxt(filename,names=True,delimiter=',',skip_header=3))
+        data_file_len = len(np.genfromtxt(filename,names=True,delimiter=',',skip_header = 4))
 
         
         bad_cols = []
@@ -123,7 +129,7 @@ class armpit(object):
             return_data = np.genfromtxt(filename,
                                         names=True,
                                         delimiter=',',
-                                        skip_header=3,
+                                        skip_header = 4,
                                         usecols=req_cols)
         return return_data
     
@@ -140,17 +146,14 @@ class armpit(object):
     '''
     playing around with different values of Rv
     '''
-    def redvec(Rv_value):
+    def redvec(self,Rv_value):
         if Rv_value == 3.1:
             return (0.446,0.610)
         elif Rv_value == 5:
                 return (0.208,0.467)
         else:
                 return ValueError("{} is not a valid Rv value".format(Rv_value))
-
-
-    Rv = 3.1
-    E336m475,E475m814 = redvec(Rv)
+    
 
 
     def IsochroneFit(self,x):
@@ -187,6 +190,8 @@ class armpit(object):
         np.seterr(all='ignore')
         new336475,new475814,a475 = self.dope((star['F336W_VEGA']-star['F475W_VEGA']),
                                              (star['F475W_VEGA']-star['F814W_VEGA']))
+        if new336475 < 2.0 and new475814<-0.6:
+            new336475,new475814,a475 = (np.nan,np.nan,np.nan)
         mag475 = star['F475W_VEGA']
         
         # 24.4: andromeda distance modulus
@@ -213,12 +218,12 @@ class armpit(object):
 
 
     def csv_header(self):
-        csvcomments = '# Simulation: {}\n'.format(self.is_sim)+'# Free parameters in simulation: {}\n'.format(self.sim_params)+'# Fitted Age: {}\n'.format(self.iso_age)
+        csvcomments = '# Simulation: {}\n'.format(self.is_sim)+'# Free parameters in simulation: {}\n'.format(self.sim_params)+'# Fitted Age: {}\n'.format(self.iso_age)+'# Comments: {}\n'.format(self.comments)
         if self.is_sim == True:
-            csvhdr = csvcomments+'RA,DEC,MASS,F336W_NAKED-F475W_NAKED,F475W_NAKED-F814W_NAKED,F475W_NAKED,F336W-F475W_VEGA,F475W-F814W_VEGA,F475W_VEGA,F336W-F475W,F475W-F814W,F475W,A(F475W)_IN,A(F475W),A(F475W)_DIFF,Z\n'
+            csvhdr = csvcomments+'RA,DEC,MASS,F336W_NAKED-F475W_NAKED,F475W_NAKED-F814W_NAKED,F475W_NAKED,F336W-F475W_VEGA,F475W-F814W_VEGA,F475W_VEGA,F336W-F475W,F475W-F814W,F475W,AV_IN,AV,AV_DIFF,Z\n'
             
         elif self.is_sim == False:
-            csvhdr = csvcomments+'RA,DEC,F336W-F475W_VEGA,F475W-F814W_VEGA,F475W_VEGA,F336W-F475W,F475W-F814W,F475W,A(F475W),Z\n'
+            csvhdr = csvcomments+'RA,DEC,F336W-F475W_VEGA,F475W-F814W_VEGA,F475W_VEGA,F336W-F475W,F475W-F814W,F475W,AV,Z\n'
         return csvhdr
         
        
@@ -257,9 +262,9 @@ class armpit(object):
                             new336475[0],
                             new475814[0],
                             new475[0],
-                            star['AF475W_IN'],
+                            star['AV_IN'],
                             a475[0],
-                            star['AF475W_IN']-a475[0],
+                            star['AV_IN']-a475[0],
                             z[0])        
                 elif self.is_sim == False:
                     data = (star['RA'],
@@ -267,11 +272,11 @@ class armpit(object):
                             star['F336W_VEGA']-star['F475W_VEGA'],
                             star['F475W_VEGA']-star['F814W_VEGA'],
                             star['F475W_VEGA'],
-                            new336475,
-                            new475814,
-                            new475,
-                            a475,
-                            z)
+                            new336475[0],
+                            new475814[0],
+                            new475[0],
+                            a475[0],
+                            z[0])
                 outfile.write('{}\n'.format(','.join(map(str,(data)))))
                 n += 1
                 sys.stdout.write('\rDoing line {}, {}% done     '.format(n,(n/data_length)*100))
@@ -644,8 +649,6 @@ class ArtificialInterpolatedMagnitudes(simulation):
         self.solar_norm = solar_norm
         self.iso_names = {'upper':'{}/{}Myr_finez.fits'.format(self.iso_dir,self.age_gap[0]),
                           'lower':'{}/{}Myr_finez.fits'.format(self.iso_dir,self.age_gap[1])}
-
-        
         
         mags = self.simulate()
         return mags
@@ -694,6 +697,8 @@ class ArtificialInterpolatedMagnitudes(simulation):
         elif self.solar_norm == True:
             metals = isochrone['Z'].copy()
             metals = np.log10(metals/0.019)
+        else:
+            raise ValueError('solar_norm must be True or False, not {}.'.format(self.solar_norm))
 
         points = zip(mass,metals)
         filt_dict = {}
@@ -702,16 +707,16 @@ class ArtificialInterpolatedMagnitudes(simulation):
         
         self.interp_dict[iso_file] = filt_dict
         
-class simulator(simulation):
+class StellarPopulationSimulator(simulation):
     def __init__(self,numstars,ages='all',z_values='all',masses='all',av='none'):
-        self.numstars = numstars
+        self.numstars = int(numstars)
         self.z_values = z_values
         self.masses = masses
         self.av = av
         self.ages = ages
         self.month = time.strftime('%m')
         self.day = time.strftime('%d')
-        self.output_file = 'sim_pops/sim_out_{}_{}_{}.fits'.format(self.numstars,
+        self.output_file = 'sim_pops/sim_out_{}_{}_{}.fits'.format('%.E'%self.numstars,
                                                                 self.month,
                                                                 self.day)
         
@@ -775,7 +780,7 @@ class simulator(simulation):
         if self.av == 'none':
             self.av_list = np.zeros(self.numstars)
         elif self.av == 'grid':
-            self.av_list = (3.5)*np.random.random(len(naked_f475))
+            self.av_list = (3.5)*np.random.random(self.numstars)
         else:
             try:
                 if len(av) == numstars:
@@ -822,9 +827,9 @@ class simulator(simulation):
                 while (self.star[0]-self.star[1]>-0.5 or np.isnan(self.star[0])
                         or np.isnan(self.star[1]) or np.isnan(self.star[2])): 
                     self.age,self.mass,self.z,self.av = self.get_params(starnum)
-                    self.star = self.simstar(self.age,self.mass,self.z,self.av)
+                    self.star = self.simstar(self.age,self.mass,self.z)
             elif self.free_parameters == []:
-                self.star = self.simstar(self.age,self.mass,self.z,self.av)
+                self.star = self.simstar(self.age,self.mass,self.z)
             
             self.mass_arr[starnum] = self.mass
             self.age_arr[starnum] = self.age
@@ -889,7 +894,7 @@ class simulator(simulation):
              fits.Column(name='F336W_VEGA',format = 'E',array = self.f336w_arr),
              fits.Column(name='F475W_VEGA',format = 'E',array = self.f475w_arr),
              fits.Column(name='F814W_VEGA',format = 'E',array = self.f814w_arr),
-             fits.Column(name='AF475W_IN',format = 'E',array = self.av_arr),
+             fits.Column(name='AV_IN',format = 'E',array = self.av_arr),
              fits.Column(name='F336W_ERR',format = 'E',array = self.dummy_arr),
              fits.Column(name='F475W_ERR',format = 'E',array = self.dummy_arr),
              fits.Column(name='F814W_ERR',format = 'E',array = self.dummy_arr)])
