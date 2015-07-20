@@ -3,7 +3,7 @@ ad_phat_tools.py:
 alex deich PHAT analysis tools.
 
 Author: Alex Deich
-Date: Jun 12 2015
+Date: June 12 2015
 '''
 
 from astropy.io import fits
@@ -17,7 +17,6 @@ import matplotlib.pyplot as plt
 import numpy.lib.recfunctions as rfn
 import pickle
 import sys
-from multiprocessing import Pool
 
 class armpit(object):
 
@@ -55,12 +54,12 @@ class armpit(object):
         self.extinct_col = extinct_col
 
         # get the path of the fits file 
-        print type(self.data_path)
         ### TO DO: make it accept csv files   
         if type(self.data_path) is StellarPopulationSimulator:
             self.raw_file = self.data_path.output_file
-        elif self.data_path.endswith('.fits'):
-            self.raw_file = self.data_path
+        elif type(self.data_path) is str:
+            if self.data_path.endswith('.fits'):
+                self.raw_file = self.data_path
         else:
             raise IOError('Data input must either be a fits file containing the relevant columns or a simulation object.')
         
@@ -96,9 +95,9 @@ class armpit(object):
         self.E336m475,self.E475m814 = self.redvec(self.Rv)
         if self.usefile == None:
             self.filename = 'multi_age_analysis/armpit_out_{}_{}_{}_{}.csv'.format(self.iso_age,
-                                                                                        self.month,
-                                                                                        self.day,
-                                                                                        self.filenum)
+                                                                                   self.month,
+                                                                                   self.day,
+                                                                                   self.filenum)
         else:
             self.filename = self.usefile
         
@@ -197,8 +196,10 @@ class armpit(object):
         # 24.4: andromeda distance modulus
         intrinsic_475 = mag475 - 24.4 - a475
 
-
-        return (new336475,new475814,intrinsic_475,a475)
+        if ~np.isnan(new336475) or ~np.isnan(new475814) or ~np.isnan(intrinsic_475) or ~np.isnan(a475):
+            return (new336475[0],new475814[0],intrinsic_475[0],a475[0])
+        else:
+            return (np.nan,np.nan,np.nan,np.nan)
     
     #If you want to de-extinct the star with some other av included in the input file
     def subtract_av(self,star,avcol):
@@ -259,24 +260,24 @@ class armpit(object):
                             star['F336W_VEGA']-star['F475W_VEGA'],
                             star['F475W_VEGA']-star['F814W_VEGA'],
                             star['F475W_VEGA'],
-                            new336475[0],
-                            new475814[0],
-                            new475[0],
+                            new336475,
+                            new475814,
+                            new475,
                             star['AV_IN'],
-                            a475[0],
-                            star['AV_IN']-a475[0],
-                            z[0])        
+                            a475,
+                            star['AV_IN']-a475,
+                            z)        
                 elif self.is_sim == False:
                     data = (star['RA'],
                             star['DEC'],
                             star['F336W_VEGA']-star['F475W_VEGA'],
                             star['F475W_VEGA']-star['F814W_VEGA'],
                             star['F475W_VEGA'],
-                            new336475[0],
-                            new475814[0],
-                            new475[0],
-                            a475[0],
-                            z[0])
+                            new336475,
+                            new475814,
+                            new475,
+                            a475,
+                            z)
                 outfile.write('{}\n'.format(','.join(map(str,(data)))))
                 n += 1
                 sys.stdout.write('\rDoing line {}, {}% done     '.format(n,(n/data_length)*100))
@@ -286,7 +287,7 @@ class armpit(object):
             print 'doing cmd...'
             self.make_plot('ccd')
             print 'doing ccd...'
-            
+
 class region_draw(object):
 ### To do: be able to write out and save a dictionary of regions
 ###  and then be able to pass it this dictionary again.
@@ -631,37 +632,83 @@ class simulation(object):
         normconst = 1.3527
         masses = (intconst/normconst)*(population**(1/(-intconst)))
         return masses
-
 # to do: make it grab the two closest isochrones, not just rounding to
 # the nearest integer, so that you can have any range of isochrones in
 # the directory.
 class ArtificialInterpolatedMagnitudes(simulation):
     def __init__(self):
         self.interp_dict = {}
-        self.iso_dir = 'shitload_of_isochrones'
+        self.iso_dir = 'shitload_of_isochrones/'
         self.filters = ['F336W','F475W','F814W']
-    
+        self.iso_dict = {}
+        
+        print '\nCollecting isochrones...'
+        self.fill_iso_dict()
+        print 'Found {} isochrones with age range from {}Myr to {}Myr.'.format(len(self.iso_dict),min(self.iso_dict.keys()),max(self.iso_dict.keys()))
+        
     def __call__(self,age,mass,z_val,solar_norm = False):
         self.mass = mass
         self.age = float(age)
         self.z_val = z_val
         self.age_gap = self.get_age_gap()
         self.solar_norm = solar_norm
-        self.iso_names = {'upper':'{}/{}Myr_finez.fits'.format(self.iso_dir,self.age_gap[0]),
-                          'lower':'{}/{}Myr_finez.fits'.format(self.iso_dir,self.age_gap[1])}
+        self.iso_names = {'upper':'{}'.format(self.age_gap[0]),
+                          'lower':'{}'.format(self.age_gap[1])}
         
         mags = self.simulate()
         return mags
         #print 'Magnitude in F336W: {}\nMagnitude in F475W: {}\nMagnitude in F814W: {}'.format(mags[0],mags[1],mags[2])
     
-    def get_age_gap(self):
-        rounded_age = round(self.age)
-        if rounded_age > self.age:
-            return (rounded_age-1,rounded_age)
-        elif rounded_age < self.age:
-            return (rounded_age,rounded_age+1)
+    
+    # looks at available isochrones and fills iso_dict with isochrones and their
+    # corresponding ages
+    def fill_iso_dict(self):
+        iso_list = os.listdir(self.iso_dir)
+        self.fits_files = [self.iso_dir+file for file in iso_list if '.fits' in file]
+        if self.fits_files ==[]:
+            raise IOError('Isochrones must be in fits format')
         else:
-            return (self.age,self.age)
+            for file in self.fits_files:
+                isochrone = fits.open(file)[1].data
+                if 'log(age/yr)' in isochrone.dtype.names:
+                    iso_age = (10**float(isochrone['log(age/yr)'][1]))/1e6
+                    self.iso_dict[iso_age] = file
+                else:
+                    raise ValueError('Isochrones must have \'log(age/yr)\' column as provided by Padova.  Offending file: {}'.format(file))
+                 
+    
+    # looks at iso_dict and finds the closest two isochrones
+    def get_age_gap(self):
+        available_ages = np.zeros(len(self.fits_files))
+        counter=0
+        for key in self.iso_dict:
+            available_ages[counter] = key
+            counter+=1
+        
+        available_ages = np.sort([available_ages])[0]
+        nearest_isochrone_index = (np.abs(available_ages-self.age)).argmin()
+        nearest_isochrone_age = available_ages[nearest_isochrone_index]
+        if nearest_isochrone_age > self.age:
+            if nearest_isochrone_age == np.min(available_ages):
+                self.upper_age = self.lower_age = nearest_isochrone_age
+                raise RuntimeWarning('{} younger than maximum available isochrone age of {}.  This may lead to an unreliable simulated value.'.format(self.age, nearest_isochrone_age))
+                return (self.iso_dict[nearest_isochrone_age],self.iso_dict[nearest_isochrone_age])
+            else:
+                next_isochrone_age = available_ages[nearest_isochrone_index-1]
+                self.upper_age = nearest_isochrone_age
+                self.lower_age = next_isochrone_age
+                return (self.iso_dict[nearest_isochrone_age],self.iso_dict[next_isochrone_age])
+        elif nearest_isochrone_age < self.age:
+            if nearest_isochrone_age == np.max(available_ages):
+                self.upper_age = self.lower_age = nearest_isochrone_age
+                raise RuntimeWarning('{} older than maximum available isochrone age of {}.  This may lead to an unreliable simulated value.'.format(self.age, nearest_isochrone_age))
+                return (self.iso_dict[nearest_isochrone_age],self.iso_dict[nearest_isochrone_age])
+            else:
+                next_isochrone_age = available_ages[nearest_isochrone_index+1]
+                self.upper_age = next_isochrone_age
+                self.lower_age = nearest_isochrone_age
+                return (self.iso_dict[next_isochrone_age],self.iso_dict[nearest_isochrone_age])
+        
         
     def simulate(self):
         if self.iso_names['upper'] not in self.interp_dict:
@@ -676,13 +723,10 @@ class ArtificialInterpolatedMagnitudes(simulation):
         
         uf336w_sim,uf475w_sim,uf814w_sim = [self.interp_dict[self.iso_names['upper']][filt](self.mass,self.z_val) for filt in self.filters]
         lf336w_sim,lf475w_sim,lf814w_sim = [self.interp_dict[self.iso_names['lower']][filt](self.mass,self.z_val) for filt in self.filters]
-        
-        upper_weight = abs(self.age_gap[1]-self.age)
-        lower_weight = abs(self.age_gap[0]-self.age)
-        if upper_weight == lower_weight == 0:
-            upper_weight = lower_weight = 0.5
-        
-        
+
+        lower_weight = (self.age-self.lower_age)/(self.upper_age-self.lower_age)
+        upper_weight = 1-lower_weight
+
         f336w_sim = (upper_weight*uf336w_sim)+(lower_weight*lf336w_sim)
         f475w_sim = (upper_weight*uf475w_sim)+(lower_weight*lf475w_sim)
         f814w_sim = (upper_weight*uf814w_sim)+(lower_weight*lf814w_sim)
@@ -706,21 +750,33 @@ class ArtificialInterpolatedMagnitudes(simulation):
             filt_dict[filt] = interpolate.LinearNDInterpolator(points,isochrone[filt].copy())
         
         self.interp_dict[iso_file] = filt_dict
-        
+
 class StellarPopulationSimulator(simulation):
-    def __init__(self,numstars,ages='all',z_values='all',masses='all',av='none'):
+    def __init__(self,numstars,ages='all',z_values='all',masses='all',av='none',rv=3.1,output_file='',fits_comments=''):
         self.numstars = int(numstars)
         self.z_values = z_values
         self.masses = masses
         self.av = av
+        self.rv = rv
         self.ages = ages
         self.month = time.strftime('%m')
         self.day = time.strftime('%d')
-        self.output_file = 'sim_pops/sim_out_{}_{}_{}.fits'.format('%.E'%self.numstars,
+        self.fits_comments = fits_comments
+        self.output_file = output_file
+        if self.output_file == '':
+            self.output_file = 'sim_pops/sim_out_{}_{}_{}.fits'.format('%.2E'%self.numstars,
                                                                 self.month,
                                                                 self.day)
+        else:
+            if type(self.output_file) is not str:
+                raise TypeError('Any user-defined output filename must be a string')
         
         self.simstar = ArtificialInterpolatedMagnitudes()
+        
+        self.age_lim = (max(self.simstar.iso_dict.keys()),
+                        min(self.simstar.iso_dict.keys()))
+        
+        
         
         self.free_parameters = []
         
@@ -742,8 +798,8 @@ class StellarPopulationSimulator(simulation):
                     self.age_list = np.zeros(self.numstars)+age[0]
                 elif len(ages) != self.numstars or len(self.ages) != 1:
                     raise ValueError('Age array must equal number of stars or 1.')
-                elif max(ages) > 100 or min(ages) < 4:
-                    raise ValueError('Maximum allowed age: 100Myr, minimum allowed age: 4Myr')
+                elif max(ages) > self.age_lim[0] or min(ages) < self.age_lim[1]:
+                    raise ValueError('Maximum allowed age: {}Myr, minimum allowed age: {}Myr'.format(age_lim[0],age_lim[1]))
             except TypeError:
                 self.age_list = np.zeros(self.numstars)+ages
         
@@ -791,7 +847,14 @@ class StellarPopulationSimulator(simulation):
                     raise ValueError('Av array must equal number of stars or 1.')
             except TypeError:
                 self.av_list = np.zeros(numstars)+av
-
+                
+        if self.av is not 'none' and self.rv == 3.1:
+            self.ext_vals = {'f336w':1.667,'f475w':1.221,'f814w':0.61}
+        elif self.av is not 'none' and self.rv == 5:
+            self.ext_vals = {'f336w':1.349,'f475w':1.14,'f814w':0.67}
+        elif self.av is not 'none':
+            raise ValueError('Rv must be either 3.1 or 5.  Not {}.'.format(self.rv))
+        
         #initialize all the arrays
         self.ra_arr = np.zeros(self.numstars)
         self.dec_arr = np.zeros(self.numstars)
@@ -806,63 +869,64 @@ class StellarPopulationSimulator(simulation):
         self.f475w_arr = np.zeros(self.numstars)
         self.f814w_arr = np.zeros(self.numstars)
         self.dummy_arr = np.zeros(self.numstars)
-    
-        self.simulate()
+        self.starlist()
         print '\ndone with simulation, writing FITS...'
         self.write_to_file()
         print '\nFITS file {} written'.format(self.output_file)
     
-    def simulate(self):
-        for starnum in xrange(self.numstars):
-            perc_done = round(25*(starnum/float(self.numstars)))
-            progress_bar = '=' * int(perc_done+1)
-            sys.stdout.write('\rSimulating... |{}{}| {}%'.format(progress_bar,
-                                                                 ' '*(25-int(perc_done+1)),
-                                                                    round(100*((starnum+1)/float(self.numstars)),2)))
-            sys.stdout.flush()
-            self.age,self.mass,self.z,self.av = self.get_params(starnum)
-            self.star = [0,0,0]
-            
-            if self.free_parameters != []:
-                while (self.star[0]-self.star[1]>-0.5 or np.isnan(self.star[0])
-                        or np.isnan(self.star[1]) or np.isnan(self.star[2])): 
-                    self.age,self.mass,self.z,self.av = self.get_params(starnum)
-                    self.star = self.simstar(self.age,self.mass,self.z)
-            elif self.free_parameters == []:
-                self.star = self.simstar(self.age,self.mass,self.z)
-            
-            self.mass_arr[starnum] = self.mass
-            self.age_arr[starnum] = self.age
-            
-            self.ra_arr[starnum] = self.dec_arr[starnum] = starnum
-            
-            self.f336w = self.star[0]
-            self.f475w = self.star[1]
-            self.f814w = self.star[2]
-            
-            self.f336w_naked_arr[starnum] = self.f336w
-            self.f475w_naked_arr[starnum] = self.f475w
-            self.f814w_naked_arr[starnum] = self.f814w
-            
-            self.a336 = self.av*1.667
-            self.a475 = self.av*1.219
-            self.a814 = self.av*0.61
-            
-            self.av_arr[starnum] = self.av
-            
-            # add av
-            self.f336w += self.a336
-            self.f475w += self.a475
-            self.f814w += self.a814
-            
-            self.f336w_arr[starnum] = self.f336w
-            self.f475w_arr[starnum] = self.f475w
-            self.f814w_arr[starnum] = self.f814w
-            self.z_arr[starnum] = self.z
+    def simulate(self,starnum):
+        perc_done = round(25*(starnum/float(self.numstars)))
+        progress_bar = '=' * int(perc_done+1)
+        sys.stdout.write('\rSimulating star {}... |{}{}| {}%'.format(starnum,
+                                                            progress_bar,
+                                                             ' '*(25-int(perc_done+1)),
+                                                             round(100*((starnum+1)/float(self.numstars)),2)))
+        sys.stdout.flush()
+        self.age,self.mass,self.z,self.av = self.get_params(starnum)
+        self.star = [0,0,0]
     
-    def get_params(self,starnum):
+        if self.free_parameters != []:
+            while (self.star[0]-self.star[1]>-0.5 or np.isnan(self.star[0])
+                    or np.isnan(self.star[1]) or np.isnan(self.star[2])): 
+                self.age,self.mass,self.z,self.av = self.get_params(starnum)
+                self.star = self.simstar(self.age,self.mass,self.z)
+        elif self.free_parameters == []:
+            self.star = self.simstar(self.age,self.mass,self.z)
+        
+        self.mass_arr[starnum] = self.mass
+        self.age_arr[starnum] = self.age
+        
+        self.ra_arr[starnum] = self.dec_arr[starnum] = starnum
+        
+        self.f336w = self.star[0]
+        self.f475w = self.star[1]
+        self.f814w = self.star[2]
+    
+        self.f336w_naked_arr[starnum] = self.f336w
+        self.f475w_naked_arr[starnum] = self.f475w
+        self.f814w_naked_arr[starnum] = self.f814w
+        
+        self.a336 = self.av*self.ext_vals['f336w']
+        self.a475 = self.av*self.ext_vals['f475w']
+        self.a814 = self.av*self.ext_vals['f814w']
+    
+        self.av_arr[starnum] = self.av
+
+        # add av
+        self.f336w += self.a336
+        self.f475w += self.a475
+        self.f814w += self.a814
+            
+        self.f336w_arr[starnum] = self.f336w
+        self.f475w_arr[starnum] = self.f475w
+        self.f814w_arr[starnum] = self.f814w
+        self.z_arr[starnum] = self.z
+    
+    
+    
+    def get_params(self,starnum):    
         if 'ages' in self.free_parameters:
-            self.star_age = (100-4)*np.random.random(1)+4
+            self.star_age = (self.age_lim[0]-self.age_lim[1])*np.random.random(1)+self.age_lim[1]
         elif 'ages' not in self.free_parameters:
             self.star_age = self.ages[starnum]
         
@@ -879,8 +943,11 @@ class StellarPopulationSimulator(simulation):
         self.star_av = self.av_list[starnum]  
     
         return self.star_age,self.star_mass,self.z_val,self.star_av
-    
-    
+        
+    def starlist(self):
+        stars = xrange(self.numstars)
+        map(self.simulate,stars)
+        
     def get_fits_data(self):
         sim_data = fits.BinTableHDU.from_columns(
             [fits.Column(name='RA',format='E',array = self.ra_arr),
@@ -905,6 +972,10 @@ class StellarPopulationSimulator(simulation):
         prihdr = fits.Header()
         prihdr['IS_SIM'] = True
         prihdr['FREEPRMS'] = ','.join(self.free_parameters)
+        if self.av == 'none':
+            self.rv = 'no extinction added'
+        prihdr['RV_VALUE'] = self.rv
+        prihdr['COMMENTS'] = self.fits_comments
         prihdu = fits.PrimaryHDU(header=prihdr)
         hdulist = fits.HDUList([prihdu,sim_data])
         hdulist.writeto(self.output_file,clobber=True)
