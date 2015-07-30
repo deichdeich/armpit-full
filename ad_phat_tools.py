@@ -7,6 +7,7 @@ Date: June 12 2015
 '''
 
 from astropy.io import fits
+import errorcalcs3filt as get_error
 import numpy as np
 import scipy.interpolate as interpolate
 from scipy.optimize import fsolve
@@ -185,46 +186,84 @@ class armpit(object):
     
     
     #Creating the Panchromatic Hubble Andromeda Reddening Treasury (PHART)
+
+    
     def phart(self,star):
         np.seterr(all='ignore')
-        new336475,new475814,a475 = self.dope((star['F336W_VEGA']-star['F475W_VEGA']),
-                                             (star['F475W_VEGA']-star['F814W_VEGA']))
-        if new336475 < 2.0 and new475814<-0.6:
-            new336475,new475814,a475 = (np.nan,np.nan,np.nan)
-        mag475 = star['F475W_VEGA']
+        mag_dict = {'F336W_VEGA','F475W_VEGA','F814W_VEGA'}
         
-        # 24.4: andromeda distance modulus
-        intrinsic_475 = mag475 - 24.4 - a475
-
-        if ~np.isnan(new336475) or ~np.isnan(new475814) or ~np.isnan(intrinsic_475) or ~np.isnan(a475):
-            return (new336475[0],new475814[0],intrinsic_475[0],a475[0])
-        else:
-            return (np.nan,np.nan,np.nan,np.nan)
-    
-    #If you want to de-extinct the star with some other av included in the input file
+        err336,err475,err814 = get_error.get_in_out(star)
+        
+        mag_dist_336 = np.random.normal(star['F336W_VEGA'],err336,100)
+        mag_dist_475 = np.random.normal(star['F475W_VEGA'],err475,100)
+        mag_dist_814 = np.random.normal(star['F814W_VEGA'],err814,100)
+        
+        dist336475arr = np.zeros_like(mag_dist_336)
+        dist475814arr = np.zeros_like(mag_dist_336)
+        distavarr = np.zeros_like(mag_dist_336)
+        
+        for i in xrange(len(mag_dist_336)):
+            new336475,new475814,av = self.dope(mag_dist_336[i]-mag_dist_475[i],
+                                               mag_dist_475[i]-mag_dist_814[i])
+            
+            dist336475arr[i] = new336475
+            dist475814arr[i] = new475814
+            distavarr[i] = av
+        
+        new336475 = np.nanmean(dist336475arr)
+        err336475 = np.nanstd(dist336475arr)
+        new475814 = np.nanmean(dist475814arr)
+        err475814 = np.nanstd(dist475814arr)
+        av = np.nanmean(distavarr)
+        av_err = np.nanstd(distavarr)
+        intrinsic_475 = np.nanmean(mag_dist_475)-24.4-av*1.219
+        intrinsic_475_err = np.std(mag_dist_475-24.4-distavarr*1.219)
+        
+        return(new336475,
+               err336475,
+               new475814,
+               err475814,
+               intrinsic_475,
+               intrinsic_475_err,
+               av,
+               av_err)
+            
+    #If you want to de-extinct the stars with some other av included in the input file
+    # doesn't do error
     def subtract_av(self,star,avcol):
         av = star[avcol]
-        intrinsic_475 = star['F475W_VEGA'] - 24.4 - av
+        intrinsic_475 = star['F475W_VEGA'] - 24.4 - av*1.219
         dx = av*self.E336m475
         dy = av*self.E475m814
         
         new336475 = (star['F336W_VEGA']-star['F475W_VEGA'])-dx
         new475814 = (star['F475W_VEGA']-star['F814W_VEGA'])-dy
 
-        return(new336475,new475814,intrinsic_475,av)        
+        return(new336475,0,new475814,0,intrinsic_475,0,av,0)        
 
-    def metal_fit(self,data_color,data_mag):
-        z = self.metal_interp_function(data_color,data_mag)
-        return (z)
+    def metal_fit(self,data_color,color_err,data_mag,mag_err):
+        color_dist_arr = np.random.normal(data_color,color_err,100)
+        mag_dist_arr = np.random.normal(data_mag,mag_err,100)
+        
+        zdist_arr = np.zeros_like(mag_dist_arr)
+        
+        for i in len(mag_dist_arr)
+            z = self.metal_interp_function(color_dist_arr[i],mag_dist_arr[i])
+            zdist_arr[i] = z
+        
+        z = np.nanmean(zdist_arr)
+        z_err = np.nanstd(zdist_arr)
+        
+        return (z,z_err)
 
 
     def csv_header(self):
         csvcomments = '# Simulation: {}\n'.format(self.is_sim)+'# Free parameters in simulation: {}\n'.format(self.sim_params)+'# Fitted Age: {}\n'.format(self.iso_age)+'# Comments: {}\n'.format(self.comments)
         if self.is_sim == True:
-            csvhdr = csvcomments+'RA,DEC,MASS,F336W_NAKED-F475W_NAKED,F475W_NAKED-F814W_NAKED,F475W_NAKED,F336W-F475W_VEGA,F475W-F814W_VEGA,F475W_VEGA,F336W-F475W,F475W-F814W,F475W,AV_IN,AV,AV_DIFF,Z\n'
+            csvhdr = csvcomments+'RA,DEC,MASS,F336W_NAKED-F475W_NAKED,F475W_NAKED-F814W_NAKED,F475W_NAKED,F336W-F475W_VEGA,F475W-F814W_VEGA,F475W_VEGA,F336W-F475W,F336W-F475W_ERR,F475W-F814W,F475W-F814W_ERR,F475W,F475W_ERR,AV_IN,AV,AV_ERR,AV_DIFF,Z,Z_ERR\n'
             
         elif self.is_sim == False:
-            csvhdr = csvcomments+'RA,DEC,F336W-F475W_VEGA,F475W-F814W_VEGA,F475W_VEGA,F336W-F475W,F475W-F814W,F475W,AV,Z\n'
+            csvhdr = csvcomments+'RA,DEC,F336W-F475W_VEGA,F475W-F814W_VEGA,F475W_VEGA,F336W-F475W,F336W-F475W_ERR,F475W-F814W,F475W-F814W_ERR,F475W,F475W_ERR,AV,AV_ERR,Z,Z_ERR\n'
         return csvhdr
         
        
@@ -243,9 +282,9 @@ class armpit(object):
         with open(self.filename, 'ab') as outfile:
             for star in self.raw_data[:limit]:
                 if self.extinct_col == None:
-                    new336475, new475814, new475, a475 = self.phart(star)
+                    new336475, err336475, new475814, err475814, new475, err475, av, av_err = self.phart(star)
                 else:
-                    new336475, new475814, new475, a475 = self.subtract_av(star,self.extinct_col)
+                    new336475, err336475, new475814, err475814, new475, err475, av, av_err = self.subtract_av(star,self.extinct_col)
                 new336 = new336475 + new475
                 new814 = (-1*new475814) - new475
                  
@@ -261,12 +300,17 @@ class armpit(object):
                             star['F475W_VEGA']-star['F814W_VEGA'],
                             star['F475W_VEGA'],
                             new336475,
+                            err336475,
                             new475814,
+                            err475814
                             new475,
+                            err475,
                             star['AV_IN'],
-                            a475,
-                            star['AV_IN']-a475,
-                            z)        
+                            av,
+                            av_err,
+                            star['AV_IN']-av,
+                            z,
+                            z_err)        
                 elif self.is_sim == False:
                     data = (star['RA'],
                             star['DEC'],
@@ -274,19 +318,19 @@ class armpit(object):
                             star['F475W_VEGA']-star['F814W_VEGA'],
                             star['F475W_VEGA'],
                             new336475,
+                            err336475,
                             new475814,
+                            err475814,
                             new475,
-                            a475,
-                            z)
+                            err475
+                            av,
+                            av_err,
+                            z,
+                            z_err)
                 outfile.write('{}\n'.format(','.join(map(str,(data)))))
                 n += 1
                 sys.stdout.write('\rDoing line {}, {}% done     '.format(n,(n/data_length)*100))
                 sys.stdout.flush()
-        if draw_plots == True:
-            self.make_plot('cmd')
-            print 'doing cmd...'
-            self.make_plot('ccd')
-            print 'doing ccd...'
 
 class region_draw(object):
 ### To do: be able to write out and save a dictionary of regions
@@ -751,6 +795,11 @@ class ArtificialInterpolatedMagnitudes(simulation):
         
         self.interp_dict[iso_file] = filt_dict
 
+## To rewrite: make it do all stars in between two given isochrones at once, then
+## clear the isochrone dictionary and go on to the next isochrone pair so that
+## you don't have to keep the huge isochrone dictionary in memory.
+## Use the keys from iso_dict to go iterate through all the stars of a given
+## isochrone pair.
 class StellarPopulationSimulator(simulation):
     def __init__(self,numstars,ages='all',z_values='all',masses='all',av='none',rv=3.1,output_file='',fits_comments=''):
         self.numstars = int(numstars)
@@ -854,6 +903,8 @@ class StellarPopulationSimulator(simulation):
             self.ext_vals = {'f336w':1.349,'f475w':1.14,'f814w':0.67}
         elif self.av is not 'none':
             raise ValueError('Rv must be either 3.1 or 5.  Not {}.'.format(self.rv))
+        elif self.av is 'none':
+            self.ext_vals = {'f336w':1,'f475w':1,'f814w':1}
         
         #initialize all the arrays
         self.ra_arr = np.zeros(self.numstars)
@@ -885,9 +936,10 @@ class StellarPopulationSimulator(simulation):
         self.age,self.mass,self.z,self.av = self.get_params(starnum)
         self.star = [0,0,0]
     
+        
+    
         if self.free_parameters != []:
-            while (self.star[0]-self.star[1]>-0.5 or np.isnan(self.star[0])
-                    or np.isnan(self.star[1]) or np.isnan(self.star[2])): 
+            while (self.star[0]-self.star[1]>0.6) or np.isnan(self.star[0]) or np.isnan(self.star[1]) or np.isnan(self.star[2]) or self.star[0] == self.star[1] == self.star[2] == 0: 
                 self.age,self.mass,self.z,self.av = self.get_params(starnum)
                 self.star = self.simstar(self.age,self.mass,self.z)
         elif self.free_parameters == []:
