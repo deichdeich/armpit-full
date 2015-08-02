@@ -247,7 +247,7 @@ class armpit(object):
         
         zdist_arr = np.zeros_like(mag_dist_arr)
         
-        for i in len(mag_dist_arr)
+        for i in xrange(len(mag_dist_arr)):
             z = self.metal_interp_function(color_dist_arr[i],mag_dist_arr[i])
             zdist_arr[i] = z
         
@@ -288,7 +288,7 @@ class armpit(object):
                 new336 = new336475 + new475
                 new814 = (-1*new475814) - new475
                  
-                z = self.metal_fit(new336475,new475)   
+                z,z_err = self.metal_fit(new336475,err336475,new475,err475)   
                 if self.is_sim == True:
                     data = (star['RA'],
                             star['DEC'],
@@ -302,7 +302,7 @@ class armpit(object):
                             new336475,
                             err336475,
                             new475814,
-                            err475814
+                            err475814,
                             new475,
                             err475,
                             star['AV_IN'],
@@ -322,7 +322,7 @@ class armpit(object):
                             new475814,
                             err475814,
                             new475,
-                            err475
+                            err475,
                             av,
                             av_err,
                             z,
